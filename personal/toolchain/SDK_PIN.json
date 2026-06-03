@@ -1,13 +1,14 @@
 {
-  "captured_at": "2026-06-03T04:43:04Z",
-  "ufbt_mode": "channel",
-  "channel": "release",
-  "ofw_sdk_version": "1.4.3",
-  "ofw_sdk_firmware_elf_sha256": "8e12bb1afe5096379244a9bd75a59f2c421db3add7994d311d75913af5e22d5b",
-  "fork_clone_tip_commit": "26a66d06e7e6caf4811e83a0bba2f5a0a486c2ff",
-  "fork_clone_tip_label": "RM0602-0820-0.420.0-724e721",
-  "on_device_firmware": "RM0526-0321-0.420.0-0e7e039 (commit 0e7e0395)",
-  "deviation_note": "ufbt --local requires pre-built SDK zip; RM does not publish one. Hello_world uses only standard furi/gui/input APIs that are stable across OFW 1.4.3 and RM 0.420.0 (both API 87.x). Cross-fork custom apps in Phase 5 will need RM-built SDK or per-app API audit.",
+  "captured_at": "2026-06-03T23:08:37Z",
+  "ufbt_mode": "local",
+  "sdk_zip_path": "dist/f7-C/flipper-z-f7-sdk-RM420FAP.zip",
+  "sdk_zip_sha256": "10de26601851e2ab37eee438c77f081b6e53685ffe32d700d872e9764d7f0a81",
+  "source_commit": "0e7e0395",
+  "source_branch": "rm0526-pin",
+  "fork_remote": "git@github.com:kleinpanic/flipperzero-firmware-wPlugins.git",
   "host": "broklein",
-  "python": "Python 3.13.5"
+  "python_version": "3.13.5",
+  "ufbt_version": "0.2.6",
+  "on_device_firmware": "RM0526-0321-0.420.0-0e7e039 (commit 0e7e0395)",
+  "deviation_note": "SDK built from RM source via './fbt updater_package'. Local mode pin via 'ufbt update --local'. Replaces channel-mode OFW 1.4.3 pin from commit 2bd8c212."
 }

@@ -1,0 +1,10 @@
+#!/bin/bash
+# D3-12 Layer B firmware-write block. Prefix-match: any subcommand starting with 'flash' or 'update'
+# is blocked (covers flash, flash_usb, update, update-sdk, update-sdk-channel, etc.).
+case "$1" in
+  flash*|update*)
+    echo "BLOCKED: firmware-write subcommand '$1' requires /goal gate. Use ufbt launch for app sideload." >&2
+    exit 1
+    ;;
+esac
+exec "$HOME/.local/srcs/gitclones/flipperzero-firmware-wPlugins/.venv-ufbt/bin/ufbt" "$@"
