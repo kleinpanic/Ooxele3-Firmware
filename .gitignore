@@ -75,3 +75,10 @@ RM*-*.txt
 RM*-*-*/
 RM-*.sh
 /%SystemDrive%
+
+# Personal toolchain
+# Personal toolchain ignores (appended; do not overwrite upstream .gitignore)
+.venv-ufbt/
+.ufbt-rm0526/
+personal/hello_world/dist/
+personal/hello_world/.ufbt/

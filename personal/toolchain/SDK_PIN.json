@@ -1,0 +1,13 @@
+{
+  "captured_at": "2026-06-03T04:43:04Z",
+  "ufbt_mode": "channel",
+  "channel": "release",
+  "ofw_sdk_version": "1.4.3",
+  "ofw_sdk_firmware_elf_sha256": "8e12bb1afe5096379244a9bd75a59f2c421db3add7994d311d75913af5e22d5b",
+  "fork_clone_tip_commit": "26a66d06e7e6caf4811e83a0bba2f5a0a486c2ff",
+  "fork_clone_tip_label": "RM0602-0820-0.420.0-724e721",
+  "on_device_firmware": "RM0526-0321-0.420.0-0e7e039 (commit 0e7e0395)",
+  "deviation_note": "ufbt --local requires pre-built SDK zip; RM does not publish one. Hello_world uses only standard furi/gui/input APIs that are stable across OFW 1.4.3 and RM 0.420.0 (both API 87.x). Cross-fork custom apps in Phase 5 will need RM-built SDK or per-app API audit.",
+  "host": "broklein",
+  "python": "Python 3.13.5"
+}
