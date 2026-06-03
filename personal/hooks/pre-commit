@@ -1,0 +1,92 @@
+#!/bin/bash
+# Pre-commit secret-scan hook (Phase 3 D3-09).
+# Scans staged blob content (NOT working tree), excludes binary file extensions,
+# detects base + Flipper-specific secret patterns. Fails commit on match.
+#
+# Install per clone: git config core.hooksPath personal/hooks
+
+set -u
+FAIL=0
+
+# Sensitive literals split with string-concat to avoid the hook flagging itself.
+UID_PATTERN="968E""1B01""27E18000"
+GPG_PATTERN="88081AEE""10008045"
+MAC_HEX="968E1B27E180"
+MAC_FMT='96:8E:1B:27:E1:80'
+
+# Whitelist exempted paths: the hook itself, and well-known binary protocol dump
+# file types that legitimately contain pattern-shaped bytes.
+hook_exempt() {
+  local f="$1"
+  # Always exempt the hook itself (it must store the patterns it scans for)
+  [[ "$f" == personal/hooks/pre-commit ]] && return 0
+  # Exempt personal documentation that legitimately references patterns by name
+  [[ "$f" =~ ^personal/README.*\.md$ ]] && return 0
+  [[ "$f" =~ ^personal/FIRST-APP.*\.md$ ]] && return 0
+  # Narrow extension exclusions
+  [[ "$f" =~ \.(nfc|sub|ir)$ ]] && return 0
+  # Dolphin frame bitmaps: narrow path AND extension (so .region_data still gets scanned)
+  [[ "$f" =~ ^assets/dolphin/.*\.(bm|bmx)$ ]] && return 0
+  return 1
+}
+
+scan_blob() {
+  local f="$1"
+  local content
+  content=$(git show ":$f" 2>/dev/null) || return 0
+
+  # Base patterns
+  if echo "$content" | grep -qiE "(api[_-]?key|secret[_-]?key|aws[_-]?access)\s*[=:]\s*[\"'][^\"']{8,}"; then
+    echo "PRE-COMMIT BLOCK [$f]: base secret pattern (api_key/secret_key/aws_access)"; return 1
+  fi
+  if echo "$content" | grep -qE "BEGIN (RSA|OPENSSH|EC) PRIVATE"; then
+    echo "PRE-COMMIT BLOCK [$f]: private key block"; return 1
+  fi
+  if echo "$content" | grep -qE "(ghp_[A-Za-z0-9]{20,}|xox[bp]-[0-9]{10,})"; then
+    echo "PRE-COMMIT BLOCK [$f]: OAuth token"; return 1
+  fi
+  if echo "$content" | grep -qE "password\s*=\s*[\"'][^\"']{8,}"; then
+    echo "PRE-COMMIT BLOCK [$f]: hardcoded password"; return 1
+  fi
+
+  # Flipper-specific
+  if echo "$content" | grep -qF "$UID_PATTERN"; then
+    echo "PRE-COMMIT BLOCK [$f]: hardware UID literal"; return 1
+  fi
+  if echo "$content" | grep -qE "(${MAC_HEX}|${MAC_FMT})"; then
+    echo "PRE-COMMIT BLOCK [$f]: BLE MAC literal"; return 1
+  fi
+  if echo "$content" | grep -qF "$GPG_PATTERN"; then
+    echo "PRE-COMMIT BLOCK [$f]: GPG signing key fingerprint"; return 1
+  fi
+  if echo "$content" | grep -qiE "(ssid|wifi[_-]?(name|pass(word)?|key))\s*[=:]\s*[\"'][^\"']+"; then
+    echo "PRE-COMMIT BLOCK [$f]: WiFi credential pattern"; return 1
+  fi
+  # RSA pubkey blob: real PEM body bodies are 200+ char base64 strings starting MIIB
+  if echo "$content" | grep -qE "MIIB[A-Za-z0-9+/]{100,}"; then
+    echo "PRE-COMMIT BLOCK [$f]: RSA pubkey body blob"; return 1
+  fi
+  # Region/provision base64 blob: filename suggests region + content has 40+ char base64
+  if [[ "$f" =~ region|provision ]]; then
+    if echo "$content" | grep -qE "[A-Za-z0-9+/]{40,}={0,2}"; then
+      echo "PRE-COMMIT BLOCK [$f]: region/provision base64 blob"; return 1
+    fi
+  fi
+  return 0
+}
+
+# Use flag-variable pattern, NOT pipe-to-while (T8 fix)
+while IFS= read -r file; do
+  [[ -z "$file" ]] && continue
+  hook_exempt "$file" && continue
+  if ! scan_blob "$file"; then
+    FAIL=1
+  fi
+done < <(git diff --cached --name-only --diff-filter=ACM)
+
+if [[ $FAIL -ne 0 ]]; then
+  echo ""
+  echo "Pre-commit secret scan FAILED. If false positive, fix the file or extend personal/hooks/pre-commit exemption list. NEVER use --no-verify on a real commit."
+  exit 1
+fi
+exit 0
