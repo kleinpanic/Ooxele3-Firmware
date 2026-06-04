@@ -29,31 +29,38 @@ static void slownessscout_draw(Canvas* canvas, void* ctx) {
     SlownessScoutState* st = ctx;
     furi_mutex_acquire(st->mutex, FuriWaitForever);
 
+    // Flipper screen 128x64. Keep y in [8..63].
     canvas_clear(canvas);
     canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str(canvas, 8, 10, "SlownessScout");
+    canvas_draw_str(canvas, 2, 9, "SlownessScout");
 
     canvas_set_font(canvas, FontSecondary);
 
     if(!st->tracing_active) {
-        canvas_draw_str(canvas, 8, 28, "Press OK to start");
-        canvas_draw_str(canvas, 8, 40, "UP/DOWN: threshold");
+        canvas_draw_str(canvas, 2, 22, "Press OK to start");
+        canvas_draw_str(canvas, 2, 32, "UP/DOWN: threshold");
+        char buf[32];
+        snprintf(buf, sizeof(buf), "Threshold: %ld ms", (long)st->latency_threshold);
+        canvas_draw_str(canvas, 2, 44, buf);
+        canvas_draw_str(canvas, 2, 60, "BACK=exit");
     } else {
-        char buf[64];
+        char buf[32];
         snprintf(buf, sizeof(buf), "Frame: %ld ms", (long)st->current_frame_time);
-        canvas_draw_str(canvas, 8, 28, buf);
+        canvas_draw_str(canvas, 2, 19, buf);
 
-        snprintf(buf, sizeof(buf), "Var: %ld ms", (long)st->current_variance);
-        canvas_draw_str(canvas, 8, 40, buf);
+        snprintf(buf, sizeof(buf), "Var:   %ld ms", (long)st->current_variance);
+        canvas_draw_str(canvas, 2, 28, buf);
 
         snprintf(buf, sizeof(buf), "Input: %ld ms", (long)st->current_input_latency);
-        canvas_draw_str(canvas, 8, 52, buf);
+        canvas_draw_str(canvas, 2, 37, buf);
 
         snprintf(buf, sizeof(buf), "Flagged: %lu", (unsigned long)st->flagged_count);
-        canvas_draw_str(canvas, 8, 64, buf);
+        canvas_draw_str(canvas, 2, 46, buf);
 
-        snprintf(buf, sizeof(buf), "Threshold: %ld ms", (long)st->latency_threshold);
-        canvas_draw_str(canvas, 8, 76, buf);
+        snprintf(buf, sizeof(buf), "Thr: %ld ms", (long)st->latency_threshold);
+        canvas_draw_str(canvas, 2, 55, buf);
+
+        canvas_draw_str(canvas, 2, 62, "BACK=stop+save");
     }
 
     furi_mutex_release(st->mutex);

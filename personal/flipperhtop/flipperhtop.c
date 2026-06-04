@@ -19,45 +19,48 @@ static void flipperhtop_draw(Canvas* canvas, void* ctx) {
     FlipperHtopState* st = ctx;
     furi_mutex_acquire(st->mutex, FuriWaitForever);
 
+    // Flipper Zero display is 128 wide x 64 tall. FontPrimary ~9px, FontSecondary ~6px. Stay y in [8..63].
     canvas_clear(canvas);
     canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str(canvas, 8, 10, "FlipperHtop");
+    canvas_draw_str(canvas, 2, 9, "FlipperHtop");
 
     canvas_set_font(canvas, FontSecondary);
 
     if(st->show_menu) {
-        canvas_draw_str(canvas, 8, 28, "Refresh Rate:");
+        canvas_draw_str(canvas, 2, 19, "Refresh Rate:");
         for(size_t i = 0; i < REFRESH_RATE_COUNT; i++) {
             char buf[32];
             snprintf(buf, sizeof(buf), "%lu Hz", (unsigned long)REFRESH_RATES[i]);
+            int y = 28 + (i * 8);
             if(st->refresh_rate_hz == REFRESH_RATES[i]) {
-                canvas_draw_str(canvas, 16, 40 + (i * 10), ">");
-                canvas_draw_str(canvas, 24, 40 + (i * 10), buf);
+                canvas_draw_str(canvas, 8, y, ">");
+                canvas_draw_str(canvas, 16, y, buf);
             } else {
-                canvas_draw_str(canvas, 24, 40 + (i * 10), buf);
+                canvas_draw_str(canvas, 16, y, buf);
             }
         }
     } else {
         size_t thread_count = furi_thread_list_size(st->thread_list);
 
         if(thread_count == 0) {
-            canvas_draw_str(canvas, 8, 28, "No threads");
+            canvas_draw_str(canvas, 2, 19, "No threads");
         } else {
-            canvas_draw_str(canvas, 8, 28, "Name     S Pri Free");
+            canvas_draw_str(canvas, 2, 17, "Nm       S Pri Fr");
 
-            size_t max_display = 5;
+            // 5px font + 2px gap. Header y=17. Rows y=24,31,38,45,52. Footer y=62.
+            const size_t max_display = 5;
             for(size_t i = 0; i < max_display && (st->scroll_offset + i) < thread_count; i++) {
                 const FuriThreadListItem* item = furi_thread_list_get_at(st->thread_list, st->scroll_offset + i);
                 if(item) {
-                    char buf[64];
+                    char buf[32];
                     flipperhtop_render_row(buf, sizeof(buf), item);
-                    canvas_draw_str(canvas, 8, 40 + (i * 10), buf);
+                    canvas_draw_str(canvas, 2, 24 + (i * 7), buf);
                 }
             }
 
             char info[32];
             snprintf(info, sizeof(info), "%zu/%zu %luHz", st->scroll_offset + 1, thread_count, (unsigned long)st->refresh_rate_hz);
-            canvas_draw_str(canvas, 8, 126, info);
+            canvas_draw_str(canvas, 2, 62, info);
         }
     }
 

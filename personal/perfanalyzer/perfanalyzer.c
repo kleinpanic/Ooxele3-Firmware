@@ -30,45 +30,49 @@ static void perfanalyzer_draw(Canvas* canvas, void* ctx) {
     PerfAnalyzerState* st = ctx;
     furi_mutex_acquire(st->mutex, FuriWaitForever);
 
+    // Flipper screen 128x64. Keep y in [8..63].
     canvas_clear(canvas);
     canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str(canvas, 8, 10, "PerfAnalyzer");
+    canvas_draw_str(canvas, 2, 9, "PerfAnalyzer");
 
     canvas_set_font(canvas, FontSecondary);
 
     if(st->app_count == 0) {
-        canvas_draw_str(canvas, 8, 28, "No apps found");
+        canvas_draw_str(canvas, 2, 22, "No apps found");
     } else if(st->show_detail) {
         char buf[64];
         snprintf(buf, sizeof(buf), "App: %s", st->apps[st->selected_app].appid);
-        canvas_draw_str(canvas, 8, 28, buf);
+        canvas_draw_str(canvas, 2, 19, buf);
 
         if(st->tracing_active) {
-            snprintf(buf, sizeof(buf), "Tracing... %zu samples", st->sample_count);
-            canvas_draw_str(canvas, 8, 40, buf);
+            snprintf(buf, sizeof(buf), "Trace %zu samples", st->sample_count);
+            canvas_draw_str(canvas, 2, 30, buf);
 
             if(st->sample_count > 0) {
-                snprintf(buf, sizeof(buf), "Peak: %lu bytes", (unsigned long)st->samples[0]);
-                canvas_draw_str(canvas, 8, 52, buf);
+                snprintf(buf, sizeof(buf), "Peak %lu B", (unsigned long)st->samples[0]);
+                canvas_draw_str(canvas, 2, 40, buf);
             }
+            canvas_draw_str(canvas, 2, 60, "BACK=stop+save");
         } else {
-            canvas_draw_str(canvas, 8, 40, "Press OK to start");
+            canvas_draw_str(canvas, 2, 30, "Press OK to start");
+            canvas_draw_str(canvas, 2, 60, "BACK=exit");
         }
     } else {
-        canvas_draw_str(canvas, 8, 28, "Select app:");
+        canvas_draw_str(canvas, 2, 17, "Select app:");
 
-        size_t max_display = 5;
+        // Rows y=24,31,38,45,52. Footer y=62.
+        const size_t max_display = 5;
         for(size_t i = 0; i < max_display && (st->scroll_offset + i) < st->app_count; i++) {
             char buf[48];
             snprintf(buf, sizeof(buf), "%s%s",
                      (st->scroll_offset + i == st->selected_app) ? ">" : " ",
                      st->apps[st->scroll_offset + i].name);
-            canvas_draw_str(canvas, 8, 40 + (i * 10), buf);
+            canvas_draw_str(canvas, 2, 24 + (i * 7), buf);
         }
 
         char info[32];
-        snprintf(info, sizeof(info), "%zu/%zu", st->scroll_offset + 1, st->app_count);
-        canvas_draw_str(canvas, 8, 126, info);
+        snprintf(info, sizeof(info), "%zu/%zu  OK=select", st->scroll_offset + 1, st->app_count);
+        canvas_draw_str(canvas, 2, 62, info);
     }
 
     furi_mutex_release(st->mutex);

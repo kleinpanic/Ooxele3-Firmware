@@ -19,33 +19,37 @@ static void processissues_draw(Canvas* canvas, void* ctx) {
     ProcessIssuesState* st = ctx;
     furi_mutex_acquire(st->mutex, FuriWaitForever);
 
+    // Flipper screen 128x64. Keep y in [8..63].
     canvas_clear(canvas);
     canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str(canvas, 8, 10, "ProcessIssues");
+    canvas_draw_str(canvas, 2, 9, "ProcessIssues");
 
     canvas_set_font(canvas, FontSecondary);
 
     if(!st->has_crashes) {
-        canvas_draw_str(canvas, 8, 28, "No crashes recorded");
-        canvas_draw_str(canvas, 8, 40, "since OTP provisioning");
+        canvas_draw_str(canvas, 2, 22, "No crashes recorded");
+        canvas_draw_str(canvas, 2, 32, "since OTP provisioning");
+        canvas_draw_str(canvas, 2, 46, "/int/.crash.log absent");
+        canvas_draw_str(canvas, 2, 62, "BACK=exit");
     } else {
-        char buf[64];
+        char buf[48];
         processissues_format_summary(buf, sizeof(buf), st->crash_count,
                                      st->crash_count > 0 ? st->crashes[0].tag : NULL);
-        canvas_draw_str(canvas, 8, 28, buf);
+        canvas_draw_str(canvas, 2, 19, buf);
 
-        canvas_draw_str(canvas, 8, 40, "Recent crashes:");
+        canvas_draw_str(canvas, 2, 28, "Recent crashes:");
 
-        size_t max_display = 4;
+        // Rows y=35,42,49,56. Footer y=62.
+        const size_t max_display = 4;
         for(size_t i = 0; i < max_display && (st->scroll_offset + i) < st->crash_count; i++) {
             snprintf(buf, sizeof(buf), "%s %04u",
                      st->crashes[st->scroll_offset + i].tag,
                      (unsigned int)(st->crashes[st->scroll_offset + i].error_code & 0xFFFF));
-            canvas_draw_str(canvas, 8, 50 + (i * 10), buf);
+            canvas_draw_str(canvas, 2, 35 + (i * 7), buf);
         }
 
         snprintf(buf, sizeof(buf), "%zu/%zu", st->scroll_offset + 1, st->crash_count);
-        canvas_draw_str(canvas, 8, 126, buf);
+        canvas_draw_str(canvas, 2, 62, buf);
     }
 
     furi_mutex_release(st->mutex);
