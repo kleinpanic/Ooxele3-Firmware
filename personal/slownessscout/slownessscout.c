@@ -1,44 +1,95 @@
 #include <furi.h>
 #include <gui/gui.h>
 #include <input/input.h>
+#include <storage/storage.h>
+#include "slownessscout_lib.h"
 
-#include <slownessscout_icons.h>
+#define MAX_SAMPLES 100
+#define CSV_ROTATION_THRESHOLD 10485760
 
 typedef struct {
     FuriMutex* mutex;
+    int32_t frame_samples[MAX_SAMPLES];
+    size_t frame_sample_count;
+    uint32_t last_frame_tick;
+    uint32_t last_input_tick;
+    int32_t current_frame_time;
+    int32_t current_variance;
+    int32_t current_input_latency;
+    int32_t latency_threshold;
+    uint32_t flagged_count;
+    File* csv_file;
+    size_t csv_bytes_written;
+    int32_t csv_rotation_index;
+    bool tracing_active;
     bool exit_pressed;
 } SlownessScoutState;
 
-static void slow_draw(Canvas* canvas, void* ctx) {
+static void slownessscout_draw(Canvas* canvas, void* ctx) {
     SlownessScoutState* st = ctx;
     furi_mutex_acquire(st->mutex, FuriWaitForever);
+
     canvas_clear(canvas);
     canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str(canvas, 8, 16, "SlownessScout");
+    canvas_draw_str(canvas, 8, 10, "SlownessScout");
+
     canvas_set_font(canvas, FontSecondary);
-    canvas_draw_str(canvas, 8, 36, "Latency monitor");
-    canvas_draw_str(canvas, 8, 52, "Press BACK to exit");
+
+    if(!st->tracing_active) {
+        canvas_draw_str(canvas, 8, 28, "Press OK to start");
+        canvas_draw_str(canvas, 8, 40, "UP/DOWN: threshold");
+    } else {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "Frame: %ld ms", (long)st->current_frame_time);
+        canvas_draw_str(canvas, 8, 28, buf);
+
+        snprintf(buf, sizeof(buf), "Var: %ld ms", (long)st->current_variance);
+        canvas_draw_str(canvas, 8, 40, buf);
+
+        snprintf(buf, sizeof(buf), "Input: %ld ms", (long)st->current_input_latency);
+        canvas_draw_str(canvas, 8, 52, buf);
+
+        snprintf(buf, sizeof(buf), "Flagged: %lu", (unsigned long)st->flagged_count);
+        canvas_draw_str(canvas, 8, 64, buf);
+
+        snprintf(buf, sizeof(buf), "Threshold: %ld ms", (long)st->latency_threshold);
+        canvas_draw_str(canvas, 8, 76, buf);
+    }
+
     furi_mutex_release(st->mutex);
 }
 
-static void slow_input(InputEvent* event, void* ctx) {
+static void slownessscout_input(InputEvent* event, void* ctx) {
     FuriMessageQueue* q = ctx;
     furi_message_queue_put(q, event, FuriWaitForever);
 }
 
 int32_t slownessscout_app(void* p) {
     UNUSED(p);
-    FURI_LOG_I("slownessscout", "starting latency monitor");
+    FURI_LOG_I("slownessscout", "starting");
 
     SlownessScoutState state = {
         .mutex = furi_mutex_alloc(FuriMutexTypeNormal),
+        .frame_sample_count = 0,
+        .last_frame_tick = 0,
+        .last_input_tick = 0,
+        .current_frame_time = 0,
+        .current_variance = 0,
+        .current_input_latency = 0,
+        .latency_threshold = 50,
+        .flagged_count = 0,
+        .csv_file = NULL,
+        .csv_bytes_written = 0,
+        .csv_rotation_index = 1,
+        .tracing_active = false,
         .exit_pressed = false,
     };
+
     FuriMessageQueue* q = furi_message_queue_alloc(8, sizeof(InputEvent));
 
     ViewPort* vp = view_port_alloc();
-    view_port_draw_callback_set(vp, slow_draw, &state);
-    view_port_input_callback_set(vp, slow_input, q);
+    view_port_draw_callback_set(vp, slownessscout_draw, &state);
+    view_port_input_callback_set(vp, slownessscout_input, q);
 
     Gui* gui = furi_record_open(RECORD_GUI);
     gui_add_view_port(gui, vp, GuiLayerFullscreen);
@@ -46,9 +97,38 @@ int32_t slownessscout_app(void* p) {
     InputEvent ev;
     while(!state.exit_pressed) {
         if(furi_message_queue_get(q, &ev, 100) == FuriStatusOk) {
+            furi_mutex_acquire(state.mutex, FuriWaitForever);
+
             if(ev.type == InputTypeShort && ev.key == InputKeyBack) {
+                if(state.tracing_active && state.csv_file) {
+                    storage_file_close(state.csv_file);
+                    state.csv_file = NULL;
+                }
                 state.exit_pressed = true;
+            } else if(ev.type == InputTypeShort && ev.key == InputKeyUp) {
+                if(state.latency_threshold > 10) state.latency_threshold -= 5;
+            } else if(ev.type == InputTypeShort && ev.key == InputKeyDown) {
+                state.latency_threshold += 5;
+            } else if(ev.type == InputTypeShort && ev.key == InputKeyOk) {
+                if(!state.tracing_active) {
+                    state.tracing_active = true;
+                    state.frame_sample_count = 0;
+                    state.flagged_count = 0;
+                    state.csv_bytes_written = 0;
+                    state.csv_rotation_index = 1;
+
+                    Storage* storage = furi_record_open(RECORD_STORAGE);
+                    char csv_filename[256];
+                    snprintf(csv_filename, sizeof(csv_filename),
+                             "/ext/logs/slowness-%03ld.csv", (long)state.csv_rotation_index);
+
+                    state.csv_file = storage_file_alloc(storage);
+                    storage_file_open(state.csv_file, csv_filename, FSAM_WRITE, FSOM_CREATE_NEW);
+                    furi_record_close(RECORD_STORAGE);
+                }
             }
+
+            furi_mutex_release(state.mutex);
         }
         view_port_update(vp);
     }
