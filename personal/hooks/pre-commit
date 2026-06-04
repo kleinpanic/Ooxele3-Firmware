@@ -23,6 +23,7 @@ hook_exempt() {
   # Exempt personal documentation that legitimately references patterns by name
   [[ "$f" =~ ^personal/README.*\.md$ ]] && return 0
   [[ "$f" =~ ^personal/FIRST-APP.*\.md$ ]] && return 0
+  [[ "$f" =~ ^personal/.*CRASH_LOG_FORMAT\.md$ ]] && return 0
   # Narrow extension exclusions
   [[ "$f" =~ \.(nfc|sub|ir)$ ]] && return 0
   # Dolphin frame bitmaps: narrow path AND extension (so .region_data still gets scanned)
