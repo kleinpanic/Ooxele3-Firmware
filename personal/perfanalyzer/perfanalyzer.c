@@ -3,6 +3,8 @@
 #include <input/input.h>
 #include <storage/storage.h>
 #include "perfanalyzer_lib.h"
+#include <stdlib.h>
+#include <string.h>
 
 #define MAX_APPS 32
 #define MAX_SAMPLES 100
@@ -123,66 +125,65 @@ int32_t perfanalyzer_app(void* p) {
     UNUSED(p);
     FURI_LOG_I("perfanalyzer", "starting");
 
-    PerfAnalyzerState state = {
-        .mutex = furi_mutex_alloc(FuriMutexTypeNormal),
-        .app_count = 0,
-        .selected_app = 0,
-        .target_thread_id = NULL,
-        .sample_count = 0,
-        .tracing_active = false,
-        .show_detail = false,
-        .scroll_offset = 0,
-        .exit_pressed = false,
-    };
+    // State struct is ~3.5KB (AppEntry apps[32] = 32*96 = 3072 bytes plus samples[100]).
+    // 4KB stack would overflow with locals + furi runtime overhead -> MPU fault.
+    // Heap-allocate via malloc + zero-init, free on exit.
+    PerfAnalyzerState* state = malloc(sizeof(PerfAnalyzerState));
+    if(!state) {
+        FURI_LOG_E("perfanalyzer", "malloc failed");
+        return -1;
+    }
+    memset(state, 0, sizeof(PerfAnalyzerState));
+    state->mutex = furi_mutex_alloc(FuriMutexTypeNormal);
 
-    perfanalyzer_enumerate_apps(&state);
+    perfanalyzer_enumerate_apps(state);
 
     FuriMessageQueue* q = furi_message_queue_alloc(8, sizeof(InputEvent));
 
     ViewPort* vp = view_port_alloc();
-    view_port_draw_callback_set(vp, perfanalyzer_draw, &state);
+    view_port_draw_callback_set(vp, perfanalyzer_draw, state);
     view_port_input_callback_set(vp, perfanalyzer_input, q);
 
     Gui* gui = furi_record_open(RECORD_GUI);
     gui_add_view_port(gui, vp, GuiLayerFullscreen);
 
     InputEvent ev;
-    while(!state.exit_pressed) {
+    while(!state->exit_pressed) {
         if(furi_message_queue_get(q, &ev, 100) == FuriStatusOk) {
-            furi_mutex_acquire(state.mutex, FuriWaitForever);
+            furi_mutex_acquire(state->mutex, FuriWaitForever);
 
             if(ev.type == InputTypeShort && ev.key == InputKeyBack) {
-                if(state.show_detail) {
-                    state.show_detail = false;
-                    state.tracing_active = false;
-                    state.sample_count = 0;
+                if(state->show_detail) {
+                    state->show_detail = false;
+                    state->tracing_active = false;
+                    state->sample_count = 0;
                 } else {
-                    state.exit_pressed = true;
+                    state->exit_pressed = true;
                 }
             } else if(ev.type == InputTypeShort && ev.key == InputKeyUp) {
-                if(!state.show_detail && state.selected_app > 0) {
-                    state.selected_app--;
-                    if(state.selected_app < state.scroll_offset) {
-                        state.scroll_offset = state.selected_app;
+                if(!state->show_detail && state->selected_app > 0) {
+                    state->selected_app--;
+                    if(state->selected_app < state->scroll_offset) {
+                        state->scroll_offset = state->selected_app;
                     }
                 }
             } else if(ev.type == InputTypeShort && ev.key == InputKeyDown) {
-                if(!state.show_detail && state.selected_app < state.app_count - 1) {
-                    state.selected_app++;
-                    if(state.selected_app >= state.scroll_offset + 4) {
-                        state.scroll_offset = state.selected_app - 3;
+                if(!state->show_detail && state->selected_app < state->app_count - 1) {
+                    state->selected_app++;
+                    if(state->selected_app >= state->scroll_offset + 4) {
+                        state->scroll_offset = state->selected_app - 3;
                     }
                 }
             } else if(ev.type == InputTypeShort && ev.key == InputKeyOk) {
-                if(!state.show_detail) {
-                    state.show_detail = true;
-                } else if(!state.tracing_active) {
-                    state.tracing_active = true;
-                    state.sample_count = 0;
+                if(!state->show_detail) {
+                    state->show_detail = true;
+                } else if(!state->tracing_active) {
+                    state->tracing_active = true;
+                    state->sample_count = 0;
                 }
             }
 
-            furi_mutex_release(state.mutex);
+            furi_mutex_release(state->mutex);
         }
         view_port_update(vp);
     }
@@ -191,7 +192,8 @@ int32_t perfanalyzer_app(void* p) {
     view_port_free(vp);
     furi_record_close(RECORD_GUI);
     furi_message_queue_free(q);
-    furi_mutex_free(state.mutex);
+    furi_mutex_free(state->mutex);
+    free(state);
 
     FURI_LOG_I("perfanalyzer", "exit");
     return 0;

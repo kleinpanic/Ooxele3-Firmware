@@ -3,6 +3,8 @@
 #include <input/input.h>
 #include <storage/storage.h>
 #include "processissues_lib.h"
+#include <stdlib.h>
+#include <string.h>
 
 #define MAX_CRASHES 50
 
@@ -96,43 +98,45 @@ int32_t processissues_app(void* p) {
     UNUSED(p);
     FURI_LOG_I("processissues", "starting");
 
-    ProcessIssuesState state = {
-        .mutex = furi_mutex_alloc(FuriMutexTypeNormal),
-        .crash_count = 0,
-        .scroll_offset = 0,
-        .has_crashes = false,
-        .exit_pressed = false,
-    };
+    // State struct includes CrashRecord crashes[MAX_CRASHES=50] = ~2KB.
+    // Heap-allocate to avoid stack overflow / MPU fault.
+    ProcessIssuesState* state = malloc(sizeof(ProcessIssuesState));
+    if(!state) {
+        FURI_LOG_E("processissues", "malloc failed");
+        return -1;
+    }
+    memset(state, 0, sizeof(ProcessIssuesState));
+    state->mutex = furi_mutex_alloc(FuriMutexTypeNormal);
 
-    processissues_load_crashes(&state);
+    processissues_load_crashes(state);
 
     FuriMessageQueue* q = furi_message_queue_alloc(8, sizeof(InputEvent));
 
     ViewPort* vp = view_port_alloc();
-    view_port_draw_callback_set(vp, processissues_draw, &state);
+    view_port_draw_callback_set(vp, processissues_draw, state);
     view_port_input_callback_set(vp, processissues_input, q);
 
     Gui* gui = furi_record_open(RECORD_GUI);
     gui_add_view_port(gui, vp, GuiLayerFullscreen);
 
     InputEvent ev;
-    while(!state.exit_pressed) {
+    while(!state->exit_pressed) {
         if(furi_message_queue_get(q, &ev, 100) == FuriStatusOk) {
-            furi_mutex_acquire(state.mutex, FuriWaitForever);
+            furi_mutex_acquire(state->mutex, FuriWaitForever);
 
             if(ev.type == InputTypeShort && ev.key == InputKeyBack) {
-                state.exit_pressed = true;
+                state->exit_pressed = true;
             } else if(ev.type == InputTypeShort && ev.key == InputKeyUp) {
-                if(state.has_crashes && state.scroll_offset > 0) {
-                    state.scroll_offset--;
+                if(state->has_crashes && state->scroll_offset > 0) {
+                    state->scroll_offset--;
                 }
             } else if(ev.type == InputTypeShort && ev.key == InputKeyDown) {
-                if(state.has_crashes && state.scroll_offset + 4 < state.crash_count) {
-                    state.scroll_offset++;
+                if(state->has_crashes && state->scroll_offset + 4 < state->crash_count) {
+                    state->scroll_offset++;
                 }
             }
 
-            furi_mutex_release(state.mutex);
+            furi_mutex_release(state->mutex);
         }
         view_port_update(vp);
     }
@@ -141,7 +145,8 @@ int32_t processissues_app(void* p) {
     view_port_free(vp);
     furi_record_close(RECORD_GUI);
     furi_message_queue_free(q);
-    furi_mutex_free(state.mutex);
+    furi_mutex_free(state->mutex);
+    free(state);
 
     FURI_LOG_I("processissues", "exit");
     return 0;
