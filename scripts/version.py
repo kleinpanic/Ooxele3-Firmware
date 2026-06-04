@@ -52,7 +52,7 @@ class GitVersion:
             "GIT_BRANCH": branch,
             "VERSION": version,
             "BUILD_DIRTY": 0,
-            "GIT_ORIGIN": "https://github.com/RogueMaster/flipperzero-firmware-wPlugins.git",
+            "GIT_ORIGIN": "https://github.com/kleinpanic/Ooxele3-Firmware.git",
             "GIT_COMMIT_DATE": commit_date,
         }
 
