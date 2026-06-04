@@ -34,6 +34,7 @@ static void perfanalyzer_draw(Canvas* canvas, void* ctx) {
     canvas_clear(canvas);
     canvas_set_font(canvas, FontPrimary);
     canvas_draw_str(canvas, 2, 9, "PerfAnalyzer");
+    canvas_draw_line(canvas, 0, 12, 127, 12);
 
     canvas_set_font(canvas, FontSecondary);
 
@@ -58,21 +59,22 @@ static void perfanalyzer_draw(Canvas* canvas, void* ctx) {
             canvas_draw_str(canvas, 2, 60, "BACK=exit");
         }
     } else {
-        canvas_draw_str(canvas, 2, 17, "Select app:");
+        canvas_draw_str(canvas, 2, 21, "Select app:");
 
-        // Rows y=24,31,38,45,52. Footer y=62.
-        const size_t max_display = 5;
+        // 4 rows at y=29,37,45,53 with 8px spacing. Separator at y=56, footer y=63.
+        const size_t max_display = 4;
         for(size_t i = 0; i < max_display && (st->scroll_offset + i) < st->app_count; i++) {
             char buf[48];
             snprintf(buf, sizeof(buf), "%s%s",
                      (st->scroll_offset + i == st->selected_app) ? ">" : " ",
                      st->apps[st->scroll_offset + i].name);
-            canvas_draw_str(canvas, 2, 24 + (i * 7), buf);
+            canvas_draw_str(canvas, 2, 29 + (i * 8), buf);
         }
 
+        canvas_draw_line(canvas, 0, 56, 127, 56);
         char info[32];
         snprintf(info, sizeof(info), "%zu/%zu  OK=select", st->scroll_offset + 1, st->app_count);
-        canvas_draw_str(canvas, 2, 62, info);
+        canvas_draw_str(canvas, 2, 63, info);
     }
 
     furi_mutex_release(st->mutex);
@@ -167,8 +169,8 @@ int32_t perfanalyzer_app(void* p) {
             } else if(ev.type == InputTypeShort && ev.key == InputKeyDown) {
                 if(!state.show_detail && state.selected_app < state.app_count - 1) {
                     state.selected_app++;
-                    if(state.selected_app >= state.scroll_offset + 5) {
-                        state.scroll_offset = state.selected_app - 4;
+                    if(state.selected_app >= state.scroll_offset + 4) {
+                        state.scroll_offset = state.selected_app - 3;
                     }
                 }
             } else if(ev.type == InputTypeShort && ev.key == InputKeyOk) {

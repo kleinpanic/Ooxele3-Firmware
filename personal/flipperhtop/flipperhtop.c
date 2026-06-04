@@ -23,6 +23,7 @@ static void flipperhtop_draw(Canvas* canvas, void* ctx) {
     canvas_clear(canvas);
     canvas_set_font(canvas, FontPrimary);
     canvas_draw_str(canvas, 2, 9, "FlipperHtop");
+    canvas_draw_line(canvas, 0, 12, 127, 12);
 
     canvas_set_font(canvas, FontSecondary);
 
@@ -45,22 +46,25 @@ static void flipperhtop_draw(Canvas* canvas, void* ctx) {
         if(thread_count == 0) {
             canvas_draw_str(canvas, 2, 19, "No threads");
         } else {
-            canvas_draw_str(canvas, 2, 17, "Nm       S Pri Fr");
+            canvas_draw_str(canvas, 2, 21, "Nm       S Pri Fr");
 
-            // 5px font + 2px gap. Header y=17. Rows y=24,31,38,45,52. Footer y=62.
-            const size_t max_display = 5;
+            // FontSecondary is ~7px tall. Use 8px row spacing for clean separation.
+            // Header y=21, rows y=29,37,45,53. Then a thin sep, footer y=63.
+            const size_t max_display = 4;
             for(size_t i = 0; i < max_display && (st->scroll_offset + i) < thread_count; i++) {
                 const FuriThreadListItem* item = furi_thread_list_get_at(st->thread_list, st->scroll_offset + i);
                 if(item) {
                     char buf[32];
                     flipperhtop_render_row(buf, sizeof(buf), item);
-                    canvas_draw_str(canvas, 2, 24 + (i * 7), buf);
+                    canvas_draw_str(canvas, 2, 29 + (i * 8), buf);
                 }
             }
 
+            // Footer separator line at y=56, footer at y=63
+            canvas_draw_line(canvas, 0, 56, 127, 56);
             char info[32];
-            snprintf(info, sizeof(info), "%zu/%zu %luHz", st->scroll_offset + 1, thread_count, (unsigned long)st->refresh_rate_hz);
-            canvas_draw_str(canvas, 2, 62, info);
+            snprintf(info, sizeof(info), "%zu/%zu  %luHz", st->scroll_offset + 1, thread_count, (unsigned long)st->refresh_rate_hz);
+            canvas_draw_str(canvas, 2, 63, info);
         }
     }
 
@@ -127,7 +131,7 @@ int32_t flipperhtop_app(void* p) {
             } else if(ev.type == InputTypeShort && ev.key == InputKeyDown) {
                 if(!state.show_menu) {
                     size_t thread_count = furi_thread_list_size(state.thread_list);
-                    if(state.scroll_offset + 5 < thread_count) state.scroll_offset++;
+                    if(state.scroll_offset + 4 < thread_count) state.scroll_offset++;
                 }
             } else if(ev.type == InputTypeShort && ev.key == InputKeyOk) {
                 state.show_menu = !state.show_menu;

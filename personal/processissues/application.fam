@@ -12,6 +12,6 @@ App(
     fap_version=(0, 1),
     fap_description="Crash log & uptime tracker",
     fap_author="User",
-    fap_icon="hello_world.png",  # 10x10 1-bit PNG
+    fap_icon="processissues.png",  # 10x10 1-bit PNG
     fap_icon_assets="images",  # Image assets to compile for this application
 )

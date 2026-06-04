@@ -33,6 +33,7 @@ static void slownessscout_draw(Canvas* canvas, void* ctx) {
     canvas_clear(canvas);
     canvas_set_font(canvas, FontPrimary);
     canvas_draw_str(canvas, 2, 9, "SlownessScout");
+    canvas_draw_line(canvas, 0, 12, 127, 12);
 
     canvas_set_font(canvas, FontSecondary);
 
