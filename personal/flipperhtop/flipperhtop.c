@@ -28,7 +28,7 @@ static void flipperhtop_draw(Canvas* canvas, void* ctx) {
     canvas_set_font(canvas, FontPrimary);
     canvas_draw_str(canvas, 2, 22, "kp/Htop");
     canvas_set_font(canvas, FontSecondary);
-    canvas_draw_str(canvas, 84, 22, "[OK]cfg");
+    canvas_draw_str(canvas, 100, 22, "cfg");
     canvas_set_color(canvas, ColorBlack);
 
     canvas_set_font(canvas, FontSecondary);
@@ -85,7 +85,7 @@ static void flipperhtop_draw(Canvas* canvas, void* ctx) {
             snprintf(info, sizeof(info), "%zu/%zu %luHz",
                 st->scroll_offset + 1, thread_count, (unsigned long)st->refresh_rate_hz);
             canvas_draw_str(canvas, 2, 63, info);
-            canvas_draw_str(canvas, 86, 63, "BACK=exit");
+            canvas_draw_str(canvas, 96, 63, "BACK");
             canvas_set_color(canvas, ColorBlack);
         }
     }

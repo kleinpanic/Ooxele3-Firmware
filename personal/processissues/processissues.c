@@ -31,7 +31,7 @@ static void processissues_draw(Canvas* canvas, void* ctx) {
     {
         char hdr[16];
         snprintf(hdr, sizeof(hdr), "%zu found", st->crash_count);
-        canvas_draw_str(canvas, 78, 22, st->has_crashes ? hdr : "clean");
+        canvas_draw_str(canvas, 96, 22, st->has_crashes ? hdr : "OK");
     }
     canvas_set_color(canvas, ColorBlack);
 
@@ -73,7 +73,7 @@ static void processissues_draw(Canvas* canvas, void* ctx) {
         canvas_set_color(canvas, ColorWhite);
         snprintf(buf, sizeof(buf), "%zu/%zu", st->scroll_offset + 1, st->crash_count);
         canvas_draw_str(canvas, 2, 63, buf);
-        canvas_draw_str(canvas, 80, 63, "BACK=exit");
+        canvas_draw_str(canvas, 96, 63, "BACK");
         canvas_set_color(canvas, ColorBlack);
     }
 

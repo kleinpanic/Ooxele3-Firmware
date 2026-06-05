@@ -37,7 +37,7 @@ static void slownessscout_draw(Canvas* canvas, void* ctx) {
     canvas_set_font(canvas, FontPrimary);
     canvas_draw_str(canvas, 2, 22, "kp/Scout");
     canvas_set_font(canvas, FontSecondary);
-    canvas_draw_str(canvas, 80, 22, st->tracing_active ? "TRACING" : "idle");
+    canvas_draw_str(canvas, 90, 22, st->tracing_active ? "TRACE" : "idle");
     canvas_set_color(canvas, ColorBlack);
 
     canvas_set_font(canvas, FontSecondary);
@@ -52,7 +52,7 @@ static void slownessscout_draw(Canvas* canvas, void* ctx) {
         canvas_draw_str(canvas, 2, 53, buf);
         canvas_draw_box(canvas, 0, 55, 128, 9);
         canvas_set_color(canvas, ColorWhite);
-        canvas_draw_str(canvas, 2, 63, "OK=start UP/DN=thr");
+        canvas_draw_str(canvas, 2, 63, "OK=start UP/DN");
         canvas_set_color(canvas, ColorBlack);
     } else {
         char buf[32];
@@ -85,7 +85,7 @@ static void slownessscout_draw(Canvas* canvas, void* ctx) {
         }
         canvas_draw_box(canvas, 0, 55, 128, 9);
         canvas_set_color(canvas, ColorWhite);
-        canvas_draw_str(canvas, 2, 63, "BACK=stop+save");
+        canvas_draw_str(canvas, 2, 63, "BACK=stop");
         canvas_set_color(canvas, ColorBlack);
     }
 
