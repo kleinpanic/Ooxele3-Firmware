@@ -38,7 +38,7 @@ static void slownessscout_draw(Canvas* canvas, void* ctx) {
     canvas_draw_str(canvas, 2, 22, "kp/Scout");
     canvas_set_font(canvas, FontSecondary);
     canvas_set_color(canvas, ColorWhite);
-    canvas_draw_str(canvas, 90, 22, st->tracing_active ? "TRACE" : "idle");
+    canvas_draw_str(canvas, 80, 22, st->tracing_active ? "TRC" : "idl");
     canvas_set_color(canvas, ColorBlack);
 
     canvas_set_font(canvas, FontSecondary);
