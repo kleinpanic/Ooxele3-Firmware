@@ -28,6 +28,7 @@ static void flipperhtop_draw(Canvas* canvas, void* ctx) {
     canvas_set_font(canvas, FontPrimary);
     canvas_draw_str(canvas, 2, 22, "kp/Htop");
     canvas_set_font(canvas, FontSecondary);
+    canvas_set_color(canvas, ColorWhite);
     canvas_draw_str(canvas, 100, 22, "cfg");
     canvas_set_color(canvas, ColorBlack);
 
@@ -36,7 +37,7 @@ static void flipperhtop_draw(Canvas* canvas, void* ctx) {
     if(st->show_menu) {
         // ASCII gauge + config rates
         canvas_draw_str(canvas, 2, 32, ".----.    refresh");
-        canvas_draw_str(canvas, 2, 39, "|/||\|");
+        canvas_draw_str(canvas, 2, 39, "|/||\\|");
         for(size_t i = 0; i < REFRESH_RATE_COUNT; i++) {
             char buf[16];
             snprintf(buf, sizeof(buf), "%lu Hz", (unsigned long)REFRESH_RATES[i]);

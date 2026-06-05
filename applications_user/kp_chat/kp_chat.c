@@ -34,6 +34,7 @@ static void kp_chat_draw(Canvas* canvas, void* ctx) {
     canvas_set_font(canvas, FontPrimary);
     canvas_draw_str(canvas, 2, 22, "kp/Chat");
     canvas_set_font(canvas, FontSecondary);
+    canvas_set_color(canvas, ColorWhite);
     canvas_draw_str(canvas, 100, 22, a->blink ? "*AW*" : "AW8");
     canvas_set_color(canvas, ColorBlack);
 

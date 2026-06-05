@@ -41,6 +41,7 @@ static void perfanalyzer_draw(Canvas* canvas, void* ctx) {
     canvas_set_font(canvas, FontPrimary);
     canvas_draw_str(canvas, 2, 22, "kp/Perf");
     canvas_set_font(canvas, FontSecondary);
+    canvas_set_color(canvas, ColorWhite);
     canvas_draw_str(canvas, 100, 22, st->show_detail ? "res" : "pick");
     canvas_set_color(canvas, ColorBlack);
 
