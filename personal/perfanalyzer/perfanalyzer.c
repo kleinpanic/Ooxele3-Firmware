@@ -32,51 +32,101 @@ static void perfanalyzer_draw(Canvas* canvas, void* ctx) {
     PerfAnalyzerState* st = ctx;
     furi_mutex_acquire(st->mutex, FuriWaitForever);
 
-    // Flipper screen 128x64. Keep y in [8..63].
+    // Polished UI: inverted header below status bar (y=13-23). Status bar owns y=0-12.
     canvas_clear(canvas);
+
+    // Header bar
+    canvas_draw_box(canvas, 0, 13, 128, 11);
+    canvas_set_color(canvas, ColorWhite);
     canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str(canvas, 2, 9, "PerfAnalyzer");
-    canvas_draw_line(canvas, 0, 12, 127, 12);
+    canvas_draw_str(canvas, 2, 22, "kp/Perf");
+    canvas_set_font(canvas, FontSecondary);
+    canvas_draw_str(canvas, 86, 22, st->show_detail ? "results" : "picker");
+    canvas_set_color(canvas, ColorBlack);
 
     canvas_set_font(canvas, FontSecondary);
 
     if(st->app_count == 0) {
-        canvas_draw_str(canvas, 2, 22, "No apps found");
+        canvas_draw_str(canvas, 2, 40, "no fap files in /ext/apps");
+        canvas_draw_box(canvas, 0, 55, 128, 9);
+        canvas_set_color(canvas, ColorWhite);
+        canvas_draw_str(canvas, 2, 63, "BACK=exit");
+        canvas_set_color(canvas, ColorBlack);
     } else if(st->show_detail) {
-        char buf[64];
-        snprintf(buf, sizeof(buf), "App: %s", st->apps[st->selected_app].appid);
-        canvas_draw_str(canvas, 2, 19, buf);
+        // Detail / results view
+        char buf[48];
+        snprintf(buf, sizeof(buf), "app: %s", st->apps[st->selected_app].appid);
+        // truncate to 21 chars to fit 128px
+        if(strlen(buf) > 21) buf[21] = '\0';
+        canvas_draw_str(canvas, 2, 32, buf);
 
         if(st->tracing_active) {
-            snprintf(buf, sizeof(buf), "Trace %zu samples", st->sample_count);
-            canvas_draw_str(canvas, 2, 30, buf);
+            snprintf(buf, sizeof(buf), "samples: %zu", st->sample_count);
+            canvas_draw_str(canvas, 2, 40, buf);
 
+            // Mini bar graph of samples (right half)
             if(st->sample_count > 0) {
-                snprintf(buf, sizeof(buf), "Peak %lu B", (unsigned long)st->samples[0]);
-                canvas_draw_str(canvas, 2, 40, buf);
+                snprintf(buf, sizeof(buf), "peak %luB", (unsigned long)st->samples[0]);
+                canvas_draw_str(canvas, 70, 40, buf);
+                // Render sample history as vertical bars in y=44-52, x=2-126
+                size_t bars = st->sample_count < 60 ? st->sample_count : 60;
+                uint32_t max = 1;
+                for(size_t i = 0; i < bars; i++) if(st->samples[i] > max) max = st->samples[i];
+                int bar_x = 2;
+                int bar_w = 122 / (bars > 0 ? bars : 1);
+                if(bar_w < 1) bar_w = 1;
+                if(bar_w > 4) bar_w = 4;
+                for(size_t i = 0; i < bars; i++) {
+                    int h = (int)((st->samples[i] * 9) / max);
+                    if(h < 1) h = 1;
+                    canvas_draw_box(canvas, bar_x, 52 - h, bar_w, h);
+                    bar_x += bar_w;
+                    if(bar_x > 124) break;
+                }
+                // Baseline
+                canvas_draw_line(canvas, 2, 52, 126, 52);
             }
-            canvas_draw_str(canvas, 2, 60, "BACK=stop+save");
+            // Footer: inverted
+            canvas_draw_box(canvas, 0, 55, 128, 9);
+            canvas_set_color(canvas, ColorWhite);
+            canvas_draw_str(canvas, 2, 63, "BACK=stop+save");
+            canvas_set_color(canvas, ColorBlack);
         } else {
-            canvas_draw_str(canvas, 2, 30, "Press OK to start");
-            canvas_draw_str(canvas, 2, 60, "BACK=exit");
+            canvas_draw_str(canvas, 2, 42, "OK to start trace");
+            canvas_draw_str(canvas, 2, 51, "(writes /ext/logs)");
+            canvas_draw_box(canvas, 0, 55, 128, 9);
+            canvas_set_color(canvas, ColorWhite);
+            canvas_draw_str(canvas, 2, 63, "OK=start  BACK=exit");
+            canvas_set_color(canvas, ColorBlack);
         }
     } else {
-        canvas_draw_str(canvas, 2, 21, "Select app:");
-
-        // 4 rows at y=29,37,45,53 with 8px spacing. Separator at y=56, footer y=63.
-        const size_t max_display = 4;
+        // App picker with highlighted row
+        // 3 rows at y=33,42,51 (9px spacing for clean inverted highlight)
+        const size_t max_display = 3;
         for(size_t i = 0; i < max_display && (st->scroll_offset + i) < st->app_count; i++) {
-            char buf[48];
-            snprintf(buf, sizeof(buf), "%s%s",
-                     (st->scroll_offset + i == st->selected_app) ? ">" : " ",
-                     st->apps[st->scroll_offset + i].name);
-            canvas_draw_str(canvas, 2, 29 + (i * 8), buf);
+            size_t idx = st->scroll_offset + i;
+            const char* name = st->apps[idx].name;
+            int y = 33 + (i * 9);
+            if(idx == st->selected_app) {
+                canvas_draw_box(canvas, 0, y - 7, 128, 9);
+                canvas_set_color(canvas, ColorWhite);
+                canvas_draw_str(canvas, 2, y, ">");
+                canvas_draw_str(canvas, 10, y, name);
+                canvas_set_color(canvas, ColorBlack);
+            } else {
+                canvas_draw_str(canvas, 2, y, " ");
+                canvas_draw_str(canvas, 10, y, name);
+            }
         }
-
-        canvas_draw_line(canvas, 0, 56, 127, 56);
+        // Footer
+        canvas_draw_box(canvas, 0, 55, 128, 9);
+        canvas_set_color(canvas, ColorWhite);
         char info[32];
-        snprintf(info, sizeof(info), "%zu/%zu  OK=select", st->scroll_offset + 1, st->app_count);
+        snprintf(info, sizeof(info), "%zu/%zu", st->selected_app + 1, st->app_count);
         canvas_draw_str(canvas, 2, 63, info);
+        canvas_draw_str(canvas, 60, 63, "OK=pick");
+        canvas_draw_str(canvas, 95, 63, "BACK=exit");
+        canvas_set_color(canvas, ColorBlack);
     }
 
     furi_mutex_release(st->mutex);
