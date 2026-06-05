@@ -1,4 +1,28 @@
 #include "geiger_logger.h"
+#include <furi_hal_gpio.h>
+#include <furi/core/timer.h>
+
+// Debounce timing (milliseconds)
+#define GEIGER_DEAD_TIME_MS 2
+
+// GPIO ISR callback: increment atomic pulse counter
+static void geiger_isr_callback(void* context) {
+    GeigerLoggerApp* app = (GeigerLoggerApp*)context;
+    // Simple implementation: just increment on every edge
+    // TODO: Add dead-time debounce if needed (use furi_get_tick() for ms granularity)
+    __atomic_fetch_add(&app->pulse_counter, 1, __ATOMIC_RELAXED);
+}
+
+// 1-Hz timer callback: post TICK event to queue
+static void geiger_timer_callback(void* context) {
+    GeigerLoggerApp* app = (GeigerLoggerApp*)context;
+
+    // Create a TICK event
+    GeigerLoggerEvent event = {.type = GeigerLoggerEventTick};
+
+    // Post event to queue (nonblocking, timeout 0 for timer context)
+    furi_message_queue_put(app->queue, &event, 0);
+}
 
 // Math function implementations
 uint16_t geiger_get_cps(GeigerLoggerApp* app) {
@@ -22,10 +46,15 @@ float geiger_get_usvh(GeigerLoggerApp* app) {
     return (float)geiger_get_cpm(app) * app->usvh_factor;
 }
 
-// Placeholder for GPIO setup (implemented in plan 05-02)
+// GPIO setup: configure PA7 for rising-edge interrupt counting
 void geiger_setup_gpio(GeigerLoggerApp* app) {
-    // To be implemented in plan 05-02
-    (void)app;
+    // Configure PA7 as an interrupt input with pull-down and slow speed
+    // This prevents noise and EMI from corrupting the pulse signal
+    furi_hal_gpio_init(&gpio_ext_pa7, GpioModeInterruptRise, GpioPullDown, GpioSpeedLow);
+
+    // Register the ISR callback for this GPIO
+    // The callback will be called on each rising edge
+    furi_hal_gpio_add_int_callback(&gpio_ext_pa7, geiger_isr_callback, app);
 }
 
 // Main entry point for the Geiger Logger FAP
@@ -55,6 +84,21 @@ int32_t geiger_logger_app(void* p) {
         return -1;
     }
 
+    // Set up GPIO for pulse counting
+    geiger_setup_gpio(app);
+
+    // Set up 1-Hz timer for periodic tick events
+    app->timer = furi_timer_alloc(geiger_timer_callback, FuriTimerTypePeriodic, app);
+    if (!app->timer) {
+        furi_message_queue_free(app->queue);
+        furi_hal_gpio_remove_int_callback(&gpio_ext_pa7);
+        free(app);
+        return -1;
+    }
+
+    // Start the timer with 1000 ms period (1 Hz)
+    furi_timer_start(app->timer, furi_ms_to_ticks(1000));
+
     // Main event loop
     GeigerLoggerEvent event;
     while (true) {
@@ -67,9 +111,26 @@ int32_t geiger_logger_app(void* p) {
 
         // Handle different event types
         switch (event.type) {
-            case GeigerLoggerEventTick:
-                // Timer tick: will be processed in plan 05-02
+            case GeigerLoggerEventTick: {
+                // Timer tick: snapshot the atomic counter, update ring buffer, accumulate total_counts
+                // Atomically read and reset the counter to 0 in one operation
+                uint32_t second_count = __atomic_exchange_n(&app->pulse_counter, 0, __ATOMIC_RELAXED);
+
+                // Cast to uint16_t for the ring buffer (cap at 65535 if overflow)
+                uint16_t ring_value = (second_count > 65535) ? 65535 : (uint16_t)second_count;
+
+                // Write the count to the current ring position
+                app->ring[app->head] = ring_value;
+
+                // Advance the head pointer (circular buffer, 60 entries)
+                app->head = (app->head + 1) % 60;
+
+                // Accumulate the total counts (sum of all pulses during the session)
+                app->total_counts += second_count;
+
+                // TODO: Post VIEW_UPDATE message or call view_port_update() to trigger UI refresh
                 break;
+            }
 
             case GeigerLoggerEventInput:
                 // Input event: handle back button, etc.
@@ -90,8 +151,22 @@ int32_t geiger_logger_app(void* p) {
     }
 
 app_exit:
-    // Cleanup: will add GPIO/timer cleanup in plan 05-02
+    // Cleanup: stop and free GPIO/timer before exiting
+    // This prevents stale callbacks after app state is freed
+
+    // Stop and free the timer
+    if (app->timer) {
+        furi_timer_stop(app->timer);
+        furi_timer_free(app->timer);
+    }
+
+    // Remove GPIO interrupt callback
+    furi_hal_gpio_remove_int_callback(&gpio_ext_pa7);
+
+    // Free message queue
     furi_message_queue_free(app->queue);
+
+    // Free app state
     free(app);
     return 0;
 }
