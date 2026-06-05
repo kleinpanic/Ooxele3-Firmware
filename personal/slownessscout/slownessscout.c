@@ -29,39 +29,64 @@ static void slownessscout_draw(Canvas* canvas, void* ctx) {
     SlownessScoutState* st = ctx;
     furi_mutex_acquire(st->mutex, FuriWaitForever);
 
-    // Flipper screen 128x64. Keep y in [8..63].
+    // Polished — header below status bar (y=13-23), timeline visualization, footer.
     canvas_clear(canvas);
+
+    canvas_draw_box(canvas, 0, 13, 128, 11);
+    canvas_set_color(canvas, ColorWhite);
     canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str(canvas, 2, 9, "SlownessScout");
-    canvas_draw_line(canvas, 0, 12, 127, 12);
+    canvas_draw_str(canvas, 2, 22, "kp/Scout");
+    canvas_set_font(canvas, FontSecondary);
+    canvas_draw_str(canvas, 80, 22, st->tracing_active ? "TRACING" : "idle");
+    canvas_set_color(canvas, ColorBlack);
 
     canvas_set_font(canvas, FontSecondary);
 
     if(!st->tracing_active) {
-        canvas_draw_str(canvas, 2, 22, "Press OK to start");
-        canvas_draw_str(canvas, 2, 32, "UP/DOWN: threshold");
+        // ASCII turtle banner
+        canvas_draw_str(canvas, 2, 32, "    .--.   slow+steady");
+        canvas_draw_str(canvas, 2, 39, "   (o o)   thresh det");
+        canvas_draw_str(canvas, 2, 46, "  /  v  \\");
         char buf[32];
-        snprintf(buf, sizeof(buf), "Threshold: %ld ms", (long)st->latency_threshold);
-        canvas_draw_str(canvas, 2, 44, buf);
-        canvas_draw_str(canvas, 2, 60, "BACK=exit");
+        snprintf(buf, sizeof(buf), "  threshold %ld ms", (long)st->latency_threshold);
+        canvas_draw_str(canvas, 2, 53, buf);
+        canvas_draw_box(canvas, 0, 55, 128, 9);
+        canvas_set_color(canvas, ColorWhite);
+        canvas_draw_str(canvas, 2, 63, "OK=start UP/DN=thr");
+        canvas_set_color(canvas, ColorBlack);
     } else {
         char buf[32];
-        snprintf(buf, sizeof(buf), "Frame: %ld ms", (long)st->current_frame_time);
-        canvas_draw_str(canvas, 2, 19, buf);
+        snprintf(buf, sizeof(buf), "fr %3ld", (long)st->current_frame_time);
+        canvas_draw_str(canvas, 2, 31, buf);
+        snprintf(buf, sizeof(buf), "var %3ld", (long)st->current_variance);
+        canvas_draw_str(canvas, 44, 31, buf);
+        snprintf(buf, sizeof(buf), "in %3ld", (long)st->current_input_latency);
+        canvas_draw_str(canvas, 90, 31, buf);
+        snprintf(buf, sizeof(buf), "flag %3lu thr %ld", (unsigned long)st->flagged_count, (long)st->latency_threshold);
+        canvas_draw_str(canvas, 2, 40, buf);
 
-        snprintf(buf, sizeof(buf), "Var:   %ld ms", (long)st->current_variance);
-        canvas_draw_str(canvas, 2, 28, buf);
-
-        snprintf(buf, sizeof(buf), "Input: %ld ms", (long)st->current_input_latency);
-        canvas_draw_str(canvas, 2, 37, buf);
-
-        snprintf(buf, sizeof(buf), "Flagged: %lu", (unsigned long)st->flagged_count);
-        canvas_draw_str(canvas, 2, 46, buf);
-
-        snprintf(buf, sizeof(buf), "Thr: %ld ms", (long)st->latency_threshold);
-        canvas_draw_str(canvas, 2, 55, buf);
-
-        canvas_draw_str(canvas, 2, 62, "BACK=stop+save");
+        // Timeline mini-bars from frame_samples
+        size_t n = st->frame_sample_count < 40 ? st->frame_sample_count : 40;
+        if(n > 0) {
+            int32_t maxv = 1;
+            for(size_t i = 0; i < n; i++) {
+                int32_t s = st->frame_samples[(st->frame_sample_count - n + i) % MAX_SAMPLES];
+                if(s > maxv) maxv = s;
+            }
+            int bw = 3, bx = 2, by = 53, bmax_h = 10;
+            for(size_t i = 0; i < n; i++) {
+                int32_t s = st->frame_samples[(st->frame_sample_count - n + i) % MAX_SAMPLES];
+                int h = (int)((s * bmax_h) / maxv);
+                if(h < 1) h = 1;
+                canvas_draw_box(canvas, bx, by - h, bw - 1, h);
+                bx += bw;
+                if(bx > 122) break;
+            }
+        }
+        canvas_draw_box(canvas, 0, 55, 128, 9);
+        canvas_set_color(canvas, ColorWhite);
+        canvas_draw_str(canvas, 2, 63, "BACK=stop+save");
+        canvas_set_color(canvas, ColorBlack);
     }
 
     furi_mutex_release(st->mutex);

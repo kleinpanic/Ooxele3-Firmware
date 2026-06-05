@@ -21,38 +21,60 @@ static void processissues_draw(Canvas* canvas, void* ctx) {
     ProcessIssuesState* st = ctx;
     furi_mutex_acquire(st->mutex, FuriWaitForever);
 
-    // Flipper screen 128x64. Keep y in [8..63].
+    // Polished — header below status bar
     canvas_clear(canvas);
+    canvas_draw_box(canvas, 0, 13, 128, 11);
+    canvas_set_color(canvas, ColorWhite);
     canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str(canvas, 2, 9, "ProcessIssues");
-    canvas_draw_line(canvas, 0, 12, 127, 12);
+    canvas_draw_str(canvas, 2, 22, "kp/Issues");
+    canvas_set_font(canvas, FontSecondary);
+    {
+        char hdr[16];
+        snprintf(hdr, sizeof(hdr), "%zu found", st->crash_count);
+        canvas_draw_str(canvas, 78, 22, st->has_crashes ? hdr : "clean");
+    }
+    canvas_set_color(canvas, ColorBlack);
 
     canvas_set_font(canvas, FontSecondary);
 
     if(!st->has_crashes) {
-        canvas_draw_str(canvas, 2, 22, "No crashes recorded");
-        canvas_draw_str(canvas, 2, 32, "since OTP provisioning");
-        canvas_draw_str(canvas, 2, 46, "/int/.crash.log absent");
-        canvas_draw_str(canvas, 2, 62, "BACK=exit");
+        // ASCII clean indicator
+        canvas_draw_str(canvas, 2, 33, "       _.--._");
+        canvas_draw_str(canvas, 2, 40, "      /_O__O_\\");
+        canvas_draw_str(canvas, 2, 47, "      \\/ ^^ \\/   clean");
+        canvas_draw_str(canvas, 2, 54, "no /int/.crash.log");
+        canvas_draw_box(canvas, 0, 55, 128, 9);
+        canvas_set_color(canvas, ColorWhite);
+        canvas_draw_str(canvas, 2, 63, "BACK=exit");
+        canvas_set_color(canvas, ColorBlack);
     } else {
         char buf[48];
         processissues_format_summary(buf, sizeof(buf), st->crash_count,
                                      st->crash_count > 0 ? st->crashes[0].tag : NULL);
-        canvas_draw_str(canvas, 2, 19, buf);
+        canvas_draw_str(canvas, 2, 31, buf);
+        canvas_draw_line(canvas, 0, 33, 127, 33);
 
-        canvas_draw_str(canvas, 2, 28, "Recent crashes:");
-
-        // Rows y=35,42,49,56. Footer y=62.
-        const size_t max_display = 4;
+        const size_t max_display = 3;
         for(size_t i = 0; i < max_display && (st->scroll_offset + i) < st->crash_count; i++) {
             snprintf(buf, sizeof(buf), "%s %04u",
                      st->crashes[st->scroll_offset + i].tag,
                      (unsigned int)(st->crashes[st->scroll_offset + i].error_code & 0xFFFF));
-            canvas_draw_str(canvas, 2, 35 + (i * 7), buf);
+            int y = 40 + (i * 7);
+            if(i == 0) {
+                canvas_draw_box(canvas, 0, y - 6, 128, 8);
+                canvas_set_color(canvas, ColorWhite);
+                canvas_draw_str(canvas, 2, y, buf);
+                canvas_set_color(canvas, ColorBlack);
+            } else {
+                canvas_draw_str(canvas, 2, y, buf);
+            }
         }
-
+        canvas_draw_box(canvas, 0, 55, 128, 9);
+        canvas_set_color(canvas, ColorWhite);
         snprintf(buf, sizeof(buf), "%zu/%zu", st->scroll_offset + 1, st->crash_count);
-        canvas_draw_str(canvas, 2, 62, buf);
+        canvas_draw_str(canvas, 2, 63, buf);
+        canvas_draw_str(canvas, 80, 63, "BACK=exit");
+        canvas_set_color(canvas, ColorBlack);
     }
 
     furi_mutex_release(st->mutex);
