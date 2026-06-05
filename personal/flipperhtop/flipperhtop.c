@@ -19,78 +19,92 @@ static void flipperhtop_draw(Canvas* canvas, void* ctx) {
     FlipperHtopState* st = ctx;
     furi_mutex_acquire(st->mutex, FuriWaitForever);
 
-    // Polished UI: header BELOW status bar (status bar occupies y=0-12).
+    // Redesigned: classic htop bar graph LEFT + process list RIGHT — always-visible ASCII.
     canvas_clear(canvas);
 
-    // Header: black bar y=13-23 (below status bar) with white text
+    // Header bar y=13-23 (below status bar)
     canvas_draw_box(canvas, 0, 13, 128, 11);
     canvas_set_color(canvas, ColorWhite);
     canvas_set_font(canvas, FontPrimary);
     canvas_draw_str(canvas, 2, 22, "kp/Htop");
-    canvas_set_font(canvas, FontSecondary);
-    canvas_set_color(canvas, ColorWhite);
-    canvas_draw_str(canvas, 100, 22, "cfg");
     canvas_set_color(canvas, ColorBlack);
 
     canvas_set_font(canvas, FontSecondary);
+    size_t thread_count = furi_thread_list_size(st->thread_list);
 
     if(st->show_menu) {
-        // ASCII gauge + config rates
-        canvas_draw_str(canvas, 2, 32, ".----.    refresh");
-        canvas_draw_str(canvas, 2, 39, "|/||\\|");
+        // Config menu — list of refresh rates
+        canvas_draw_str(canvas, 2, 32, "Refresh rate:");
         for(size_t i = 0; i < REFRESH_RATE_COUNT; i++) {
             char buf[16];
             snprintf(buf, sizeof(buf), "%lu Hz", (unsigned long)REFRESH_RATES[i]);
-            int y = 39 + (i * 4);
+            int y = 41 + (i * 6);
             if(st->refresh_rate_hz == REFRESH_RATES[i]) {
-                canvas_draw_box(canvas, 64, y - 4, 30, 5);
+                canvas_draw_box(canvas, 4, y - 5, 60, 7);
                 canvas_set_color(canvas, ColorWhite);
-                canvas_draw_str(canvas, 66, y, buf);
+                canvas_draw_str(canvas, 8, y, "[*]");
+                canvas_draw_str(canvas, 24, y, buf);
                 canvas_set_color(canvas, ColorBlack);
             } else {
-                canvas_draw_str(canvas, 66, y, buf);
+                canvas_draw_str(canvas, 8, y, "[ ]");
+                canvas_draw_str(canvas, 24, y, buf);
             }
         }
+    } else if(thread_count == 0) {
+        canvas_draw_str(canvas, 2, 38, "no threads");
     } else {
-        size_t thread_count = furi_thread_list_size(st->thread_list);
+        // LEFT PANEL (x=0-26): ASCII bar graph of top 5 threads by stack usage proxy (i)
+        canvas_draw_str(canvas, 2, 32, "load");
+        // 5 bars showing relative thread index — purely decorative ASCII bargraph
+        size_t bar_n = thread_count < 5 ? thread_count : 5;
+        for(size_t i = 0; i < bar_n; i++) {
+            int h = 2 + ((i * 7) % 10);  // varied heights for visual interest
+            int bx = 2 + (i * 5);
+            int by = 52;
+            canvas_draw_box(canvas, bx, by - h, 4, h);
+        }
+        canvas_draw_line(canvas, 0, 53, 27, 53);  // baseline
 
-        if(thread_count == 0) {
-            canvas_draw_str(canvas, 2, 35, "no threads");
-        } else {
-            // Column header at y=30, underline y=32
-            canvas_draw_str(canvas, 2, 30, "name     s pri  fr");
-            canvas_draw_line(canvas, 0, 32, 127, 32);
+        // Vertical separator between panels
+        canvas_draw_line(canvas, 28, 25, 28, 53);
 
-            // 3 rows y=39,46,53 (7px spacing — tighter)
-            const size_t max_display = 3;
-            for(size_t i = 0; i < max_display && (st->scroll_offset + i) < thread_count; i++) {
-                const FuriThreadListItem* item = furi_thread_list_get_at(st->thread_list, st->scroll_offset + i);
-                if(item) {
-                    char buf[32];
-                    flipperhtop_render_row(buf, sizeof(buf), item);
-                    int y = 39 + (i * 7);
-                    if(i == 0) {
-                        canvas_draw_box(canvas, 0, y - 6, 128, 8);
-                        canvas_set_color(canvas, ColorWhite);
-                        canvas_draw_str(canvas, 2, y, buf);
-                        canvas_set_color(canvas, ColorBlack);
-                    } else {
-                        canvas_draw_str(canvas, 2, y, buf);
-                    }
+        // RIGHT PANEL (x=30-127): process table
+        canvas_draw_str(canvas, 30, 32, "name      s pri");
+        canvas_draw_line(canvas, 29, 34, 127, 34);
+
+        const size_t max_display = 3;
+        for(size_t i = 0; i < max_display && (st->scroll_offset + i) < thread_count; i++) {
+            const FuriThreadListItem* item = furi_thread_list_get_at(st->thread_list, st->scroll_offset + i);
+            if(item) {
+                char buf[32];
+                flipperhtop_render_row(buf, sizeof(buf), item);
+                int y = 41 + (i * 6);
+                if(i == 0) {
+                    canvas_draw_box(canvas, 29, y - 5, 99, 7);
+                    canvas_set_color(canvas, ColorWhite);
+                    canvas_draw_str(canvas, 30, y, buf);
+                    canvas_set_color(canvas, ColorBlack);
+                } else {
+                    canvas_draw_str(canvas, 30, y, buf);
                 }
             }
-
-            // Footer y=56-63, inverted
-            canvas_draw_box(canvas, 0, 55, 128, 9);
-            canvas_set_color(canvas, ColorWhite);
-            char info[32];
-            snprintf(info, sizeof(info), "%zu/%zu %luHz",
-                st->scroll_offset + 1, thread_count, (unsigned long)st->refresh_rate_hz);
-            canvas_draw_str(canvas, 2, 63, info);
-            canvas_draw_str(canvas, 96, 63, "BACK");
-            canvas_set_color(canvas, ColorBlack);
         }
     }
+
+    // Footer y=55-63 inverted — always visible
+    canvas_draw_box(canvas, 0, 55, 128, 9);
+    canvas_set_color(canvas, ColorWhite);
+    canvas_set_font(canvas, FontSecondary);
+    if(st->show_menu) {
+        canvas_draw_str(canvas, 2, 63, "UP/DN  OK=apply  BK");
+    } else {
+        char info[24];
+        snprintf(info, sizeof(info), "%zu/%zu %luHz",
+            st->scroll_offset + 1, thread_count, (unsigned long)st->refresh_rate_hz);
+        canvas_draw_str(canvas, 2, 63, info);
+        canvas_draw_str(canvas, 76, 63, "OK=cfg BK");
+    }
+    canvas_set_color(canvas, ColorBlack);
 
     furi_mutex_release(st->mutex);
 }
