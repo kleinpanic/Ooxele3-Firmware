@@ -1,0 +1,13 @@
+App(
+    appid="kp_chat",
+    name="kp Chat",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="kp_chat_app",
+    stack_size=2 * 1024,
+    fap_icon="kp_chat.png",
+    fap_category="Tools",
+    fap_author="kleinpanic",
+    fap_weburl="https://github.com/kleinpanic/Ooxele3-Firmware",
+    fap_version="0.1",
+    fap_description="LLM chat client - awaits host daemon via USB-CDC bridge (LFM2.5 offload)",
+)

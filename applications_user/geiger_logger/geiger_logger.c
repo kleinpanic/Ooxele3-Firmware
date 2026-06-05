@@ -146,10 +146,21 @@ static void draw_callback(Canvas* canvas, void* ctx) {
             }
         }
     } else {
+        // Polished about screen — inverted header + ASCII radiation art
+        canvas_draw_box(canvas, 0, 13, 128, 11);
+        canvas_set_color(canvas, ColorWhite);
         canvas_set_font(canvas, FontPrimary);
-        canvas_draw_str_aligned(canvas, 64, 10, AlignCenter, AlignBottom, "kp//panic Geiger");
-        canvas_draw_str_aligned(canvas, 64, 20, AlignCenter, AlignBottom, "v0.1 - kleinpanic");
-        canvas_draw_str_aligned(canvas, 64, 40, AlignCenter, AlignBottom, "github.com/kleinpanic");
+        canvas_draw_str_aligned(canvas, 64, 22, AlignCenter, AlignBottom, "kp/Geiger");
+        canvas_set_color(canvas, ColorBlack);
+        canvas_set_font(canvas, FontSecondary);
+        canvas_draw_str(canvas, 2, 32, "      .--.    J305 tube");
+        canvas_draw_str(canvas, 2, 39, "    .(())^.   PA7 input");
+        canvas_draw_str(canvas, 2, 46, "   /  ()()  \\");
+        canvas_draw_str(canvas, 2, 53, " v0.1 kleinpanic CC0");
+        canvas_draw_box(canvas, 0, 55, 128, 9);
+        canvas_set_color(canvas, ColorWhite);
+        canvas_draw_str(canvas, 2, 63, "BACK=exit  UP=log");
+        canvas_set_color(canvas, ColorBlack);
     }
 }
 
