@@ -34,19 +34,20 @@ static void flipperhtop_draw(Canvas* canvas, void* ctx) {
     canvas_set_font(canvas, FontSecondary);
 
     if(st->show_menu) {
-        canvas_draw_str(canvas, 2, 32, "Refresh rate:");
+        // ASCII gauge + config rates
+        canvas_draw_str(canvas, 2, 32, ".----.    refresh");
+        canvas_draw_str(canvas, 2, 39, "|/||\|");
         for(size_t i = 0; i < REFRESH_RATE_COUNT; i++) {
             char buf[16];
             snprintf(buf, sizeof(buf), "%lu Hz", (unsigned long)REFRESH_RATES[i]);
-            int y = 41 + (i * 7);
+            int y = 39 + (i * 4);
             if(st->refresh_rate_hz == REFRESH_RATES[i]) {
-                canvas_draw_box(canvas, 6, y - 6, 60, 8);
+                canvas_draw_box(canvas, 64, y - 4, 30, 5);
                 canvas_set_color(canvas, ColorWhite);
-                canvas_draw_str(canvas, 10, y, "* ");
-                canvas_draw_str(canvas, 22, y, buf);
+                canvas_draw_str(canvas, 66, y, buf);
                 canvas_set_color(canvas, ColorBlack);
             } else {
-                canvas_draw_str(canvas, 22, y, buf);
+                canvas_draw_str(canvas, 66, y, buf);
             }
         }
     } else {
