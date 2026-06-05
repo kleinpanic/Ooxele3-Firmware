@@ -3,9 +3,11 @@ App(
     name="Geiger Logger",
     apptype=FlipperAppType.EXTERNAL,
     entry_point="geiger_logger_app",
-    stack_size=8 * 1024,
+    stack_size=2 * 1024,
     fap_icon="geiger_logger.png",
-    fap_version="0.1.0",
-    fap_category="Tools",
-    fap_author="user"
+    fap_category="GPIO/Sensors",
+    fap_author="kleinpanic",
+    fap_weburl="https://github.com/kleinpanic/Ooxele3-Firmware",
+    fap_version="0.1",
+    fap_description="kp Geiger Logger - J305 tube + CSV logging",
 )

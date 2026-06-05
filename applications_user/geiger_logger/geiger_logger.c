@@ -1,172 +1,423 @@
-#include "geiger_logger.h"
-#include <furi_hal_gpio.h>
-#include <furi/core/timer.h>
+// CC0 1.0 Universal (CC0 1.0)
+// Public Domain Dedication
+// https://github.com/nmrr
 
-// Debounce timing (milliseconds)
-#define GEIGER_DEAD_TIME_MS 2
+#include <datetime/datetime.h>
+#include <stdio.h>
+#include <furi.h>
+#include <gui/gui.h>
+#include <input/input.h>
+#include <notification/notification_messages.h>
+#include <furi_hal_random.h>
+#include <furi_hal_pwm.h>
+#include <furi_hal_power.h>
 
-// GPIO ISR callback: increment atomic pulse counter
-static void geiger_isr_callback(void* context) {
-    GeigerLoggerApp* app = (GeigerLoggerApp*)context;
-    // Simple implementation: just increment on every edge
-    // TODO: Add dead-time debounce if needed (use furi_get_tick() for ms granularity)
-    __atomic_fetch_add(&app->pulse_counter, 1, __ATOMIC_RELAXED);
-}
+#include <storage/storage.h>
+#include <stream/buffered_file_stream.h>
 
-// 1-Hz timer callback: post TICK event to queue
-static void geiger_timer_callback(void* context) {
-    GeigerLoggerApp* app = (GeigerLoggerApp*)context;
+#include <locale/locale.h>
 
-    // Create a TICK event
-    GeigerLoggerEvent event = {.type = GeigerLoggerEventTick};
+#include <expansion/expansion.h>
 
-    // Post event to queue (nonblocking, timeout 0 for timer context)
-    furi_message_queue_put(app->queue, &event, 0);
-}
+#define SCREEN_SIZE_X 128
+#define SCREEN_SIZE_Y 64
 
-// Math function implementations
-uint16_t geiger_get_cps(GeigerLoggerApp* app) {
-    // Return the most recent second's count from the ring buffer
-    return app->ring[(app->head - 1 + 60) % 60];
-}
+// FOR J305 GEIGER TUBE
+#define CONVERSION_FACTOR 0.0081
 
-uint32_t geiger_get_cpm(GeigerLoggerApp* app) {
-    // Sum all 60 entries in the ring buffer
-    uint32_t sum = 0;
-    for (int i = 0; i < 60; i++) {
-        sum += app->ring[i];
-    }
-    // If app has been running < 60 seconds, extrapolate to a full minute
-    // For now, just return the sum (will be refined in later plans)
-    return sum;
-}
+typedef enum {
+    EventTypeInput,
+    ClockEventTypeTick,
+    EventGPIO,
+} EventType;
 
-float geiger_get_usvh(GeigerLoggerApp* app) {
-    // J305 Geiger-Müller tube conversion factor: 0.0081 µSv/h per CPM
-    return (float)geiger_get_cpm(app) * app->usvh_factor;
-}
+typedef struct {
+    EventType type;
+    InputEvent input;
+} EventApp;
 
-// GPIO setup: configure PA7 for rising-edge interrupt counting
-void geiger_setup_gpio(GeigerLoggerApp* app) {
-    // Configure PA7 as an interrupt input with pull-down and slow speed
-    // This prevents noise and EMI from corrupting the pulse signal
-    furi_hal_gpio_init(&gpio_ext_pa7, GpioModeInterruptRise, GpioPullDown, GpioSpeedLow);
+typedef struct {
+    FuriMutex* mutex;
+    uint32_t cps, cpm;
+    uint32_t line[SCREEN_SIZE_X];
+    float coef;
+    uint8_t data;
+    uint8_t zoom;
+    uint8_t newLinePosition;
+    uint8_t version;
+} mutexStruct;
 
-    // Register the ISR callback for this GPIO
-    // The callback will be called on each rising edge
-    furi_hal_gpio_add_int_callback(&gpio_ext_pa7, geiger_isr_callback, app);
-}
+static void draw_callback(Canvas* canvas, void* ctx) {
+    furi_assert(ctx);
 
-// Main entry point for the Geiger Logger FAP
-int32_t geiger_logger_app(void* p) {
-    (void)p;
+    mutexStruct* mutexVal = ctx;
+    mutexStruct mutexDraw;
+    furi_mutex_acquire(mutexVal->mutex, FuriWaitForever);
+    memcpy(&mutexDraw, mutexVal, sizeof(mutexStruct));
+    furi_mutex_release(mutexVal->mutex);
 
-    // Allocate application state
-    GeigerLoggerApp* app = (GeigerLoggerApp*)malloc(sizeof(GeigerLoggerApp));
-    if (!app) {
-        return -1;
-    }
+    if(mutexDraw.version == 0) {
+        char buffer[32];
+        if(mutexDraw.data == 0)
+            snprintf(buffer, sizeof(buffer), "%ld cps - %ld cpm", mutexDraw.cps, mutexDraw.cpm);
+        else if(mutexDraw.data == 1)
+            snprintf(
+                buffer,
+                sizeof(buffer),
+                "%ld cps - %.2f uSv/h",
+                mutexDraw.cps,
+                ((double)mutexDraw.cpm * (double)CONVERSION_FACTOR));
+        else if(mutexDraw.data == 2)
+            snprintf(
+                buffer,
+                sizeof(buffer),
+                "%ld cps - %.2f mSv/y",
+                mutexDraw.cps,
+                (((double)mutexDraw.cpm * (double)CONVERSION_FACTOR)) * (double)8.76);
+        else if(mutexDraw.data == 3)
+            snprintf(
+                buffer,
+                sizeof(buffer),
+                "%ld cps - %.4f Rad/h",
+                mutexDraw.cps,
+                ((double)mutexDraw.cpm * (double)CONVERSION_FACTOR) / (double)10000);
+        else if(mutexDraw.data == 4)
+            snprintf(
+                buffer,
+                sizeof(buffer),
+                "%ld cps - %.2f mR/h",
+                mutexDraw.cps,
+                ((double)mutexDraw.cpm * (double)CONVERSION_FACTOR) / (double)10);
+        else
+            snprintf(
+                buffer,
+                sizeof(buffer),
+                "%ld cps - %.2f uR/h",
+                mutexDraw.cps,
+                ((double)mutexDraw.cpm * (double)CONVERSION_FACTOR) * (double)100);
 
-    // Initialize app state
-    for (int i = 0; i < 60; i++) {
-        app->ring[i] = 0;
-    }
-    app->head = 0;
-    app->pulse_counter = 0;
-    app->total_counts = 0;
-    app->timer = NULL;
-    app->usvh_factor = 0.0081f;  // Default J305 conversion factor
+        canvas_set_font(canvas, FontPrimary);
+        canvas_draw_str_aligned(canvas, 64, 10, AlignCenter, AlignBottom, buffer);
 
-    // Create message queue for event dispatch
-    app->queue = furi_message_queue_alloc(10, sizeof(GeigerLoggerEvent));
-    if (!app->queue) {
-        free(app);
-        return -1;
-    }
+        uint8_t linePosition = mutexDraw.newLinePosition;
 
-    // Set up GPIO for pulse counting
-    geiger_setup_gpio(app);
+        if(mutexDraw.zoom == 0) {
+            for(int i = 0; i < SCREEN_SIZE_X; i += 8) {
+                if(linePosition != 0)
+                    linePosition--;
+                else
+                    linePosition = SCREEN_SIZE_X - 1;
 
-    // Set up 1-Hz timer for periodic tick events
-    app->timer = furi_timer_alloc(geiger_timer_callback, FuriTimerTypePeriodic, app);
-    if (!app->timer) {
-        furi_message_queue_free(app->queue);
-        furi_hal_gpio_remove_int_callback(&gpio_ext_pa7);
-        free(app);
-        return -1;
-    }
-
-    // Start the timer with 1000 ms period (1 Hz)
-    furi_timer_start(app->timer, furi_ms_to_ticks(1000));
-
-    // Main event loop
-    GeigerLoggerEvent event;
-    while (true) {
-        // Wait for next event (blocking)
-        FuriStatus status = furi_message_queue_get(app->queue, &event, FuriWaitForever);
-
-        if (status != FuriStatusOk) {
-            continue;
-        }
-
-        // Handle different event types
-        switch (event.type) {
-            case GeigerLoggerEventTick: {
-                // Timer tick: snapshot the atomic counter, update ring buffer, accumulate total_counts
-                // Atomically read and reset the counter to 0 in one operation
-                uint32_t second_count = __atomic_exchange_n(&app->pulse_counter, 0, __ATOMIC_RELAXED);
-
-                // Cast to uint16_t for the ring buffer (cap at 65535 if overflow)
-                uint16_t ring_value = (second_count > 65535) ? 65535 : (uint16_t)second_count;
-
-                // Write the count to the current ring position
-                app->ring[app->head] = ring_value;
-
-                // Advance the head pointer (circular buffer, 60 entries)
-                app->head = (app->head + 1) % 60;
-
-                // Accumulate the total counts (sum of all pulses during the session)
-                app->total_counts += second_count;
-
-                // TODO: Post VIEW_UPDATE message or call view_port_update() to trigger UI refresh
-                break;
+                float Y = SCREEN_SIZE_Y - (mutexDraw.line[linePosition] * mutexDraw.coef);
+                for(int j = 0; j < 8; j++)
+                    canvas_draw_line(canvas, i + j, Y, i + j, SCREEN_SIZE_Y);
             }
+        } else if(mutexDraw.zoom == 1) {
+            for(int i = 0; i < SCREEN_SIZE_X; i += 4) {
+                if(linePosition != 0)
+                    linePosition--;
+                else
+                    linePosition = SCREEN_SIZE_X - 1;
 
-            case GeigerLoggerEventInput:
-                // Input event: handle back button, etc.
-                // For now, if BACK button pressed, exit
-                if (event.input.key == InputKeyBack && event.input.type == InputTypePress) {
-                    GeigerLoggerEvent stop_event = {.type = GeigerLoggerEventStop};
-                    furi_message_queue_put(app->queue, &stop_event, FuriWaitForever);
-                }
-                break;
+                float Y = SCREEN_SIZE_Y - (mutexDraw.line[linePosition] * mutexDraw.coef);
+                for(int j = 0; j < 4; j++)
+                    canvas_draw_line(canvas, i + j, Y, i + j, SCREEN_SIZE_Y);
+            }
+        } else if(mutexDraw.zoom == 2) {
+            for(int i = 0; i < SCREEN_SIZE_X; i += 2) {
+                if(linePosition != 0)
+                    linePosition--;
+                else
+                    linePosition = SCREEN_SIZE_X - 1;
 
-            case GeigerLoggerEventStop:
-                // Exit signal received
-                goto app_exit;
+                float Y = SCREEN_SIZE_Y - (mutexDraw.line[linePosition] * mutexDraw.coef);
+                for(int j = 0; j < 2; j++)
+                    canvas_draw_line(canvas, i + j, Y, i + j, SCREEN_SIZE_Y);
+            }
+        } else if(mutexDraw.zoom == 3) {
+            for(int i = 0; i < SCREEN_SIZE_X; i++) {
+                if(linePosition != 0)
+                    linePosition--;
+                else
+                    linePosition = SCREEN_SIZE_X - 1;
 
-            default:
-                break;
+                float Y = SCREEN_SIZE_Y - (mutexDraw.line[linePosition] * mutexDraw.coef);
+                canvas_draw_line(canvas, i, Y, i, SCREEN_SIZE_Y);
+            }
         }
+    } else {
+        canvas_set_font(canvas, FontPrimary);
+        canvas_draw_str_aligned(canvas, 64, 10, AlignCenter, AlignBottom, "kp//panic Geiger");
+        canvas_draw_str_aligned(canvas, 64, 20, AlignCenter, AlignBottom, "v0.1 - kleinpanic");
+        canvas_draw_str_aligned(canvas, 64, 40, AlignCenter, AlignBottom, "github.com/kleinpanic");
+    }
+}
+
+static void input_callback(InputEvent* input_event, void* ctx) {
+    furi_assert(ctx);
+    FuriMessageQueue* event_queue = ctx;
+    EventApp event = {.type = EventTypeInput, .input = *input_event};
+    furi_message_queue_put(event_queue, &event, FuriWaitForever);
+}
+
+static void clock_tick(void* ctx) {
+    furi_assert(ctx);
+
+    uint32_t randomNumber = furi_hal_random_get();
+    randomNumber &= 0xFFF;
+    if(randomNumber == 0) randomNumber = 1;
+
+    furi_hal_pwm_set_params(FuriHalPwmOutputIdLptim2PA4, randomNumber, 50);
+
+    FuriMessageQueue* queue = ctx;
+    EventApp event = {.type = ClockEventTypeTick};
+    furi_message_queue_put(queue, &event, 0);
+}
+
+static void gpiocallback(void* ctx) {
+    furi_assert(ctx);
+    FuriMessageQueue* queue = ctx;
+    EventApp event = {.type = EventGPIO};
+    furi_message_queue_put(queue, &event, 0);
+}
+
+int32_t geiger_logger_app() {
+    Expansion* expansion = furi_record_open(RECORD_EXPANSION);
+    expansion_disable(expansion);
+
+    EventApp event;
+    FuriMessageQueue* event_queue = furi_message_queue_alloc(8, sizeof(EventApp));
+
+    furi_hal_pwm_start(FuriHalPwmOutputIdLptim2PA4, 5, 50);
+
+    mutexStruct mutexVal;
+    mutexVal.cps = 0;
+    mutexVal.cpm = 0;
+    for(int i = 0; i < SCREEN_SIZE_X; i++)
+        mutexVal.line[i] = 0;
+    mutexVal.coef = 1;
+    mutexVal.data = 0;
+    mutexVal.zoom = 2;
+    mutexVal.newLinePosition = 0;
+    mutexVal.version = 0;
+
+    uint32_t counter = 0;
+
+    mutexVal.mutex = furi_mutex_alloc(FuriMutexTypeNormal);
+    if(!mutexVal.mutex) {
+        furi_message_queue_free(event_queue);
+        expansion_enable(expansion);
+        furi_record_close(RECORD_EXPANSION);
+        return 255;
     }
 
-app_exit:
-    // Cleanup: stop and free GPIO/timer before exiting
-    // This prevents stale callbacks after app state is freed
+    ViewPort* view_port = view_port_alloc();
+    view_port_draw_callback_set(view_port, draw_callback, &mutexVal.mutex);
+    view_port_input_callback_set(view_port, input_callback, event_queue);
 
-    // Stop and free the timer
-    if (app->timer) {
-        furi_timer_stop(app->timer);
-        furi_timer_free(app->timer);
-    }
-
-    // Remove GPIO interrupt callback
+    // DISABLE & REMOVE INITIAL CALLBACK (FIRMWARE BUG ?)
+    furi_hal_gpio_disable_int_callback(&gpio_ext_pa7);
     furi_hal_gpio_remove_int_callback(&gpio_ext_pa7);
 
-    // Free message queue
-    furi_message_queue_free(app->queue);
+    // NEW CALLBACK
+    furi_hal_gpio_init(&gpio_ext_pa7, GpioModeInterruptFall, GpioPullUp, GpioSpeedVeryHigh);
+    furi_hal_gpio_add_int_callback(&gpio_ext_pa7, gpiocallback, event_queue);
+    furi_hal_gpio_enable_int_callback(&gpio_ext_pa7);
 
-    // Free app state
-    free(app);
+    Gui* gui = furi_record_open(RECORD_GUI);
+    gui_add_view_port(gui, view_port, GuiLayerFullscreen);
+
+    FuriTimer* timer = furi_timer_alloc(clock_tick, FuriTimerTypePeriodic, event_queue);
+    furi_timer_start(timer, 1000);
+
+    // ENABLE 5V pin
+    // Enable 5v power, multiple attempts to avoid issues with power chip protection false triggering
+    uint8_t attempts = 0;
+    while(!furi_hal_power_is_otg_enabled() && attempts++ < 5) {
+        furi_hal_power_enable_otg();
+        furi_delay_ms(10);
+    }
+
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    Stream* file_stream = buffered_file_stream_alloc(storage);
+    FuriString* dataString = furi_string_alloc();
+    uint32_t epoch = 0;
+    uint8_t recordData = 0;
+
+    NotificationApp* notification = furi_record_open(RECORD_NOTIFICATION);
+
+    while(1) {
+        FuriStatus event_status = furi_message_queue_get(event_queue, &event, FuriWaitForever);
+
+        uint8_t screenRefresh = 0;
+
+        if(event_status == FuriStatusOk) {
+            if(event.type == EventTypeInput) {
+                if(event.input.key == InputKeyBack &&
+                   (event.input.type == InputTypeShort || event.input.type == InputTypeLong)) {
+                    break;
+                } else if(event.input.key == InputKeyOk && event.input.type == InputTypeLong) {
+                    counter = 0;
+                    furi_mutex_acquire(mutexVal.mutex, FuriWaitForever);
+
+                    mutexVal.cps = 0;
+                    mutexVal.cpm = 0;
+                    for(uint8_t i = 0; i < SCREEN_SIZE_X; i++)
+                        mutexVal.line[i] = 0;
+                    mutexVal.newLinePosition = 0;
+
+                    screenRefresh = 1;
+                    furi_mutex_release(mutexVal.mutex);
+                } else if(event.input.key == InputKeyUp && event.input.type == InputTypeLong) {
+                    if(recordData == 0) {
+                        notification_message(notification, &sequence_set_only_red_255);
+
+                        DateTime datetime;
+                        furi_hal_rtc_get_datetime(&datetime);
+
+                        char path[64];
+                        snprintf(
+                            path,
+                            sizeof(path),
+                            EXT_PATH("/geiger-%.4d-%.2d-%.2d--%.2d-%.2d-%.2d.csv"),
+                            datetime.year,
+                            datetime.month,
+                            datetime.day,
+                            datetime.hour,
+                            datetime.minute,
+                            datetime.second);
+
+                        buffered_file_stream_open(
+                            file_stream, path, FSAM_WRITE, FSOM_CREATE_ALWAYS);
+                        furi_string_printf(dataString, "epoch,cps\n");
+                        stream_write_string(file_stream, dataString);
+                        epoch = 0;
+                        recordData = 1;
+                    } else {
+                        buffered_file_stream_close(file_stream);
+                        notification_message(notification, &sequence_reset_red);
+                        recordData = 0;
+                    }
+                } else if((event.input.key == InputKeyLeft &&
+                           event.input.type == InputTypeShort)) {
+                    furi_mutex_acquire(mutexVal.mutex, FuriWaitForever);
+
+                    if(mutexVal.data != 0)
+                        mutexVal.data--;
+                    else
+                        mutexVal.data = 5;
+
+                    screenRefresh = 1;
+                    furi_mutex_release(mutexVal.mutex);
+                } else if((event.input.key == InputKeyRight &&
+                           event.input.type == InputTypeShort)) {
+                    furi_mutex_acquire(mutexVal.mutex, FuriWaitForever);
+
+                    if(mutexVal.data != 5)
+                        mutexVal.data++;
+                    else
+                        mutexVal.data = 0;
+
+                    screenRefresh = 1;
+                    furi_mutex_release(mutexVal.mutex);
+                } else if((event.input.key == InputKeyUp && event.input.type == InputTypeShort)) {
+                    furi_mutex_acquire(mutexVal.mutex, FuriWaitForever);
+                    if(mutexVal.zoom != 0) mutexVal.zoom--;
+
+                    screenRefresh = 1;
+                    furi_mutex_release(mutexVal.mutex);
+
+                } else if((event.input.key == InputKeyDown &&
+                           event.input.type == InputTypeShort)) {
+                    furi_mutex_acquire(mutexVal.mutex, FuriWaitForever);
+                    if(mutexVal.zoom != 3) mutexVal.zoom++;
+
+                    screenRefresh = 1;
+                    furi_mutex_release(mutexVal.mutex);
+                } else if((event.input.key == InputKeyDown && event.input.type == InputTypeLong)) {
+                    furi_mutex_acquire(mutexVal.mutex, FuriWaitForever);
+                    if(mutexVal.version == 0)
+                        mutexVal.version = 1;
+                    else
+                        mutexVal.version = 0;
+
+                    screenRefresh = 1;
+                    furi_mutex_release(mutexVal.mutex);
+                }
+            } else if(event.type == ClockEventTypeTick) {
+                if(recordData == 1) {
+                    furi_string_printf(dataString, "%lu,%lu\n", epoch++, counter);
+                    stream_write_string(file_stream, dataString);
+                }
+
+                furi_mutex_acquire(mutexVal.mutex, FuriWaitForever);
+
+                mutexVal.line[mutexVal.newLinePosition] = counter;
+                mutexVal.cps = counter;
+                counter = 0;
+
+                mutexVal.cpm = mutexVal.line[mutexVal.newLinePosition];
+                uint32_t max = mutexVal.line[mutexVal.newLinePosition];
+                uint8_t linePosition = mutexVal.newLinePosition;
+
+                for(int i = 1; i < SCREEN_SIZE_X; i++) {
+                    if(linePosition != 0)
+                        linePosition--;
+                    else
+                        linePosition = SCREEN_SIZE_X - 1;
+
+                    if(i < 60) mutexVal.cpm += mutexVal.line[linePosition];
+                    if(mutexVal.line[linePosition] > max) max = mutexVal.line[linePosition];
+                }
+
+                if(max > 0)
+                    mutexVal.coef = ((float)(SCREEN_SIZE_Y - 15)) / ((float)max);
+                else
+                    mutexVal.coef = 1;
+
+                if(mutexVal.newLinePosition != SCREEN_SIZE_X - 1)
+                    mutexVal.newLinePosition++;
+                else
+                    mutexVal.newLinePosition = 0;
+
+                screenRefresh = 1;
+                furi_mutex_release(mutexVal.mutex);
+            } else if(event.type == EventGPIO) {
+                counter++;
+            }
+        }
+
+        if(screenRefresh == 1) view_port_update(view_port);
+    }
+
+    if(recordData == 1) {
+        buffered_file_stream_close(file_stream);
+        notification_message(notification, &sequence_reset_red);
+    }
+
+    furi_string_free(dataString);
+    furi_record_close(RECORD_NOTIFICATION);
+    stream_free(file_stream);
+    furi_record_close(RECORD_STORAGE);
+
+    // Disable 5v power
+    if(furi_hal_power_is_otg_enabled()) {
+        furi_hal_power_disable_otg();
+    }
+
+    furi_hal_gpio_disable_int_callback(&gpio_ext_pa7);
+    furi_hal_gpio_remove_int_callback(&gpio_ext_pa7);
+    furi_hal_pwm_stop(FuriHalPwmOutputIdLptim2PA4);
+
+    furi_message_queue_free(event_queue);
+    furi_mutex_free(mutexVal.mutex);
+    gui_remove_view_port(gui, view_port);
+    view_port_free(view_port);
+    furi_timer_free(timer);
+    furi_record_close(RECORD_GUI);
+
+    expansion_enable(expansion);
+    furi_record_close(RECORD_EXPANSION);
+
     return 0;
 }
