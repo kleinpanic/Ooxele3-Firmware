@@ -19,52 +19,77 @@ static void flipperhtop_draw(Canvas* canvas, void* ctx) {
     FlipperHtopState* st = ctx;
     furi_mutex_acquire(st->mutex, FuriWaitForever);
 
-    // Flipper Zero display is 128 wide x 64 tall. FontPrimary ~9px, FontSecondary ~6px. Stay y in [8..63].
+    // Polished UI: inverted header (kp branding), column-aligned table, highlighted footer.
     canvas_clear(canvas);
+
+    // Header: black bar y=0-11 with white text
+    canvas_draw_box(canvas, 0, 0, 128, 11);
+    canvas_set_color(canvas, ColorWhite);
     canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str(canvas, 2, 9, "FlipperHtop");
-    canvas_draw_line(canvas, 0, 12, 127, 12);
+    canvas_draw_str(canvas, 2, 9, "kp/Htop");
+    canvas_set_font(canvas, FontSecondary);
+    canvas_draw_str(canvas, 84, 9, "[OK]cfg");
+    canvas_set_color(canvas, ColorBlack);
 
     canvas_set_font(canvas, FontSecondary);
 
     if(st->show_menu) {
-        canvas_draw_str(canvas, 2, 19, "Refresh Rate:");
+        canvas_draw_str(canvas, 2, 21, "Refresh rate:");
         for(size_t i = 0; i < REFRESH_RATE_COUNT; i++) {
-            char buf[32];
+            char buf[16];
             snprintf(buf, sizeof(buf), "%lu Hz", (unsigned long)REFRESH_RATES[i]);
-            int y = 28 + (i * 8);
+            int y = 30 + (i * 8);
             if(st->refresh_rate_hz == REFRESH_RATES[i]) {
-                canvas_draw_str(canvas, 8, y, ">");
-                canvas_draw_str(canvas, 16, y, buf);
+                // Highlight selected row
+                canvas_draw_box(canvas, 6, y - 7, 60, 9);
+                canvas_set_color(canvas, ColorWhite);
+                canvas_draw_str(canvas, 10, y, "* ");
+                canvas_draw_str(canvas, 22, y, buf);
+                canvas_set_color(canvas, ColorBlack);
             } else {
-                canvas_draw_str(canvas, 16, y, buf);
+                canvas_draw_str(canvas, 10, y, "  ");
+                canvas_draw_str(canvas, 22, y, buf);
             }
         }
     } else {
         size_t thread_count = furi_thread_list_size(st->thread_list);
 
         if(thread_count == 0) {
-            canvas_draw_str(canvas, 2, 19, "No threads");
+            canvas_draw_str(canvas, 2, 25, "no threads");
         } else {
-            canvas_draw_str(canvas, 2, 21, "Nm       S Pri Fr");
+            // Column header at y=18 with underline at y=20
+            canvas_draw_str(canvas, 2, 18, "name     s pri  fr");
+            canvas_draw_line(canvas, 0, 20, 127, 20);
 
-            // FontSecondary is ~7px tall. Use 8px row spacing for clean separation.
-            // Header y=21, rows y=29,37,45,53. Then a thin sep, footer y=63.
+            // Row data y=27,35,43,51 (8px spacing)
             const size_t max_display = 4;
             for(size_t i = 0; i < max_display && (st->scroll_offset + i) < thread_count; i++) {
                 const FuriThreadListItem* item = furi_thread_list_get_at(st->thread_list, st->scroll_offset + i);
                 if(item) {
                     char buf[32];
                     flipperhtop_render_row(buf, sizeof(buf), item);
-                    canvas_draw_str(canvas, 2, 29 + (i * 8), buf);
+                    int y = 27 + (i * 8);
+                    // Highlight first visible row (currently focused)
+                    if(i == 0) {
+                        canvas_draw_box(canvas, 0, y - 7, 128, 9);
+                        canvas_set_color(canvas, ColorWhite);
+                        canvas_draw_str(canvas, 2, y, buf);
+                        canvas_set_color(canvas, ColorBlack);
+                    } else {
+                        canvas_draw_str(canvas, 2, y, buf);
+                    }
                 }
             }
 
-            // Footer separator line at y=56, footer at y=63
-            canvas_draw_line(canvas, 0, 56, 127, 56);
+            // Footer divider at y=55, inverted footer y=56-63
+            canvas_draw_box(canvas, 0, 55, 128, 9);
+            canvas_set_color(canvas, ColorWhite);
             char info[32];
-            snprintf(info, sizeof(info), "%zu/%zu  %luHz", st->scroll_offset + 1, thread_count, (unsigned long)st->refresh_rate_hz);
+            snprintf(info, sizeof(info), "%zu/%zu %luHz",
+                st->scroll_offset + 1, thread_count, (unsigned long)st->refresh_rate_hz);
             canvas_draw_str(canvas, 2, 63, info);
+            canvas_draw_str(canvas, 90, 63, "BACK exit");
+            canvas_set_color(canvas, ColorBlack);
         }
     }
 
