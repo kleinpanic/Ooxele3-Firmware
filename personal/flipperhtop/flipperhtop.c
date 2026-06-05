@@ -69,8 +69,8 @@ static void flipperhtop_draw(Canvas* canvas, void* ctx) {
         canvas_draw_line(canvas, 28, 25, 28, 53);
 
         // RIGHT PANEL (x=30-127): process table
-        canvas_draw_str(canvas, 30, 32, "name      s pri");
-        canvas_draw_line(canvas, 29, 34, 127, 34);
+        canvas_draw_str(canvas, 30, 32, "name   s pri");
+        canvas_draw_line(canvas, 29, 34, 110, 34);
 
         const size_t max_display = 3;
         for(size_t i = 0; i < max_display && (st->scroll_offset + i) < thread_count; i++) {
@@ -80,7 +80,7 @@ static void flipperhtop_draw(Canvas* canvas, void* ctx) {
                 flipperhtop_render_row(buf, sizeof(buf), item);
                 int y = 41 + (i * 6);
                 if(i == 0) {
-                    canvas_draw_box(canvas, 29, y - 5, 99, 7);
+                    canvas_draw_box(canvas, 29, y - 5, 82, 7);
                     canvas_set_color(canvas, ColorWhite);
                     canvas_draw_str(canvas, 30, y, buf);
                     canvas_set_color(canvas, ColorBlack);
@@ -102,7 +102,7 @@ static void flipperhtop_draw(Canvas* canvas, void* ctx) {
         snprintf(info, sizeof(info), "%zu/%zu %luHz",
             st->scroll_offset + 1, thread_count, (unsigned long)st->refresh_rate_hz);
         canvas_draw_str(canvas, 2, 63, info);
-        canvas_draw_str(canvas, 76, 63, "OK=cfg BK");
+        canvas_draw_str(canvas, 56, 63, "OK=cfg");
     }
     canvas_set_color(canvas, ColorBlack);
 

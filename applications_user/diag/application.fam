@@ -1,0 +1,10 @@
+
+App(
+    appid="diag",
+    name="diag",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="diag_app",
+    stack_size=2*1024,
+    fap_category="Tools",
+    fap_version="0.1",
+)

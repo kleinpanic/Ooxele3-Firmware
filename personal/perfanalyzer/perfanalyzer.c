@@ -109,7 +109,7 @@ static void perfanalyzer_draw(Canvas* canvas, void* ctx) {
             const char* name = st->apps[idx].name;
             int y = 33 + (i * 9);
             if(idx == st->selected_app) {
-                canvas_draw_box(canvas, 0, y - 7, 128, 9);
+                canvas_draw_box(canvas, 0, y - 7, 110, 9);
                 canvas_set_color(canvas, ColorWhite);
                 canvas_draw_str(canvas, 2, y, ">");
                 canvas_draw_str(canvas, 10, y, name);
@@ -126,7 +126,7 @@ static void perfanalyzer_draw(Canvas* canvas, void* ctx) {
         snprintf(info, sizeof(info), "%zu/%zu", st->selected_app + 1, st->app_count);
         canvas_draw_str(canvas, 2, 63, info);
         canvas_draw_str(canvas, 60, 63, "OK=pick");
-        canvas_draw_str(canvas, 95, 63, "BACK=exit");
+        canvas_draw_str(canvas, 70, 63, "BACK=exit");
         canvas_set_color(canvas, ColorBlack);
     }
 
