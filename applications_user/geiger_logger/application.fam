@@ -1,0 +1,11 @@
+App(
+    appid="geiger_logger",
+    name="Geiger Logger",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="geiger_logger_app",
+    stack_size=8 * 1024,
+    fap_icon="geiger_logger.png",
+    fap_version="0.1.0",
+    fap_category="Tools",
+    fap_author="user"
+)
